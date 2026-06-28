@@ -14,10 +14,6 @@ from pathlib import Path
 
 
 class RateLimitedEmbeddings(GoogleGenerativeAIEmbeddings):
-    """Gemini 무료 티어 RPM(분당) 제한 회피용 — 배치 사이에 1초 슬립.
-    (일일 한도는 코드로 못 피하지만, 한 번 인덱싱해 PersistentClient에 적재해두면
-    이후엔 재임베딩이 일어나지 않아 추가 호출이 발생하지 않는다.)"""
-
     def embed_documents(self, texts):
         batch_size = 90
         results = []
@@ -34,15 +30,7 @@ load_dotenv()
 # 인덱싱
 print("문서 로딩 및 인덱싱 시작...")
 
-# data/processed의 마크다운을 직접 읽어 청킹한다(langchain-community 의존성 제거).
-# 원본 PDF는 data/raw, markitdown 변환 결과가 data/processed → preprocess.py 참고.
-#
-# 청킹 전략: 2단계.
-#  1) MarkdownHeaderTextSplitter — 헤더(#, ##, ###) 기준으로 먼저 분할.
-#     "Challenges" 같은 의미 단위 섹션이 한 청크로 보존돼 검색 정밀도가 올라간다.
-#     (문자 수만으로 자르면 섹션이 쪼개지거나 다른 내용과 섞여 임베딩이 희석됨)
-#  2) RecursiveCharacterTextSplitter — 너무 긴 섹션만 1000자로 추가 분할(길이 상한).
-# 헤더 정보 + 파일 경로(source)를 메타데이터로 보존 → 답변 출처 표기에 사용.
+# 2단계 청킹: 마크다운 헤더로 섹션 분할(의미 단위 보존) 후 긴 섹션만 길이 분할.
 DATA_DIR = Path(__file__).parent / "data" / "processed"
 
 header_splitter = MarkdownHeaderTextSplitter(
@@ -62,14 +50,7 @@ for path in md_files:
     split_docs.extend(char_splitter.split_documents(sections))
 print(f"분할된 chunk 수: {len(split_docs)}")
 
-# 임베딩 provider — EMBED_PROVIDER로 전환(기본 local).
-#   local  : HuggingFace bge-base-en-v1.5(로컬, 무제한·무료). 개발/포트폴리오 기본값.
-#   google : Gemini gemini-embedding-001. 무료 일일 한도가 있으나, 한 번 인덱싱해
-#            PersistentClient에 적재하면 이후 재호출이 없다. billing을 켜면 한도 해제.
-# ⚠️ provider를 바꾸면 임베딩 차원이 달라진다(bge 768 vs Gemini 3072). 기존 컬렉션과
-#    섞이면 깨지므로, 전환할 땐 chroma_data를 비우고 새로 인덱싱할 것.
-# normalize_embeddings=True → 정규화 벡터라 코사인 유사도 검색에 적합.
-# (Apple Silicon이면 device="mps"로 가속, 한국어 노트 추가 시 BAAI/bge-m3로 교체)
+# 임베딩 provider(EMBED_PROVIDER): local=bge-base / google=gemini-embedding-001.
 EMBED_PROVIDER = os.getenv("EMBED_PROVIDER", "local").lower()
 if EMBED_PROVIDER == "google":
     print("임베딩: Gemini gemini-embedding-001")
@@ -85,10 +66,7 @@ else:
         encode_kwargs={"normalize_embeddings": True},
     )
 
-# Chroma 연결 — CHROMA_MODE로 모드를 명시적으로 고른다(기본값 local).
-#   local  : 임베디드 PersistentClient. 서버 불필요, 레코드 제한 없음 → 개발 기본값.
-#   server : 별도 Chroma 서버(chroma run --path ./chroma_data --port 8000).
-#   cloud  : Chroma Cloud. 단 무료 티어는 컬렉션당 300 레코드 제한이 있다.
+# Chroma 연결(CHROMA_MODE): local=임베디드 PersistentClient(기본) / server=별도 서버 / cloud=Cloud(무료 300개 제한).
 CHROMA_COLLECTION = "cs231n"
 CHROMA_MODE = os.getenv("CHROMA_MODE", "local").lower()
 if CHROMA_MODE == "cloud":
@@ -109,8 +87,7 @@ else:
     print(f"로컬 Chroma(임베디드) 연결: {persist_path}")
     chroma_client = chromadb.PersistentClient(path=persist_path)
 
-# 이름만 보고 "재사용"하면, 과거에 빈 컬렉션이 한 번 생긴 경우 영원히
-# 임베딩을 건너뛰는 함정이 있다. 그래서 '존재' 여부가 아니라 '레코드 개수'로 판단한다.
+
 existing = {c.name for c in chroma_client.list_collections()}
 need_index = True
 if CHROMA_COLLECTION in existing:
@@ -140,14 +117,15 @@ print("인덱싱 완료")
 
 # RAG
 print("RAG 파이프라인 시작...")
-# Retriever를 통해 관련 문서를 검색하고, LLM을 통해 답변을 생성하는 RAG 파이프라인 구성
-retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+TOP_K = 5  # 검색 청크 수
+retriever = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
 
-# Augmented Generation을 위한 Prompt 구성
+# 답변 생성 프롬프트 (답변 언어는 질문 언어를 따른다)
 prompt = ChatPromptTemplate.from_messages([
     ("system",
      "Answer the user's question using ONLY the provided documents. "
-     "Respond in the same language as the question. "
+     "Always reply in the SAME language as the question "
+     "(a Korean question must be answered in Korean, an English question in English). "
      "If the documents are insufficient, say so honestly instead of guessing.\n\n"
      "{context}"),
     ("human", "{question}"),
@@ -254,7 +232,7 @@ if existing:
 else:
     dataset = client.create_dataset(
         dataset_name=DATASET_NAME,
-        description="CS231n 강의 슬라이드 기반 RAG 답변 품질 평가용",
+        description="CS231n 강의 노트 기반 RAG 답변 품질 평가용",
     )
     print(f"새 Dataset 생성: {dataset.id}")
     client.create_examples(
@@ -278,10 +256,8 @@ def target(inputs):
     result = rag.invoke(inputs["question"])
     return {"answer": result["answer"], "sources": result["sources"]}
 
-# === 휴리스틱 평가기 ===
-# 기존 'contains_expected_keyword'는 기대 답변의 앞 두 단어를 키워드로 써서
-# (예: "Image classification") 측정력이 없었다. 대신 기대 답변의 '의미 있는
-# 내용어'를 얼마나 회수했는지(recall)를 0~1 연속 점수로 계산한다.
+# 휴리스틱 평가기: 기대 답변의 핵심 내용어(4자↑, 불용어 제외) 회수율(0~1).
+# (영문 토큰 기준 — 한글 평가 문항을 추가하면 토큰화 보강 필요)
 _STOPWORDS = {
     "that", "this", "with", "from", "into", "each", "then", "than", "when",
     "what", "which", "while", "these", "those", "their", "them", "they",
@@ -306,22 +282,19 @@ def keyword_recall(run, example):
 
 JUDGE_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
-     "당신은 답변 품질을 평가하는 채점자입니다.\n"
-     "아래 기대 답변(reference)과 모델 답변(prediction)을 비교하고,\n"
-     "의미가 일치하면 1, 부분적으로만 일치하면 0.5, 무관하면 0을 점수로 매기세요.\n"
-     "응답은 반드시 첫 줄에 0/0.5/1 중 하나의 숫자만, 둘째 줄부터 짧은 이유를 적으세요."),
+     "You are a grader assessing answer quality. "
+     "Compare the reference answer with the model's prediction and assign a score: "
+     "1 if they match in meaning, 0.5 if only partially, 0 if unrelated. "
+     "Output ONLY the number (0, 0.5, or 1) on the first line, "
+     "then a brief reason on the following lines."),
     ("human",
-     "질문: {question}\n\n"
-     "기대 답변: {reference}\n\n"
-     "모델 답변: {prediction}"),
+     "Question: {question}\n\n"
+     "Reference answer: {reference}\n\n"
+     "Model answer: {prediction}"),
 ])
 
-# [한계] 이상적으로 Judge는 player(gemini-2.5-flash)보다 똑똑한 프론티어 모델이어야
-# '팔이 안으로 굽는' 편향을 피한다. 그러나 gemini-2.5-pro는 무료 티어가 없어(quota
-# limit:0) 무료 키로는 호출 불가 → 무료 환경에선 flash를 Judge로 쓰고 이 편향을 한계로
-# 명시한다. billing을 켜면 JUDGE_MODEL=gemini-2.5-pro 또는 OpenAI GPT-4o로 올리면 된다.
 judge_llm = ChatGoogleGenerativeAI(
-    model=os.getenv("JUDGE_MODEL", "gemini-2.5-flash"),
+    model=os.getenv("JUDGE_MODEL", "gemini-3.5-flash"),
     google_api_key=os.getenv("GOOGLE_API_KEY"),
     temperature=0,
 )
@@ -359,7 +332,7 @@ result = evaluate(
     target,
     data=DATASET_NAME,
     evaluators=[keyword_recall, llm_judge],
-    experiment_prefix="v1-baseline",
+    experiment_prefix=f"{EMBED_PROVIDER}-k{TOP_K}",  # 설정별로 라벨 자동 구분
 )
 
 print(result)
