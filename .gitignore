@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+.env
+
+# ChromaDB persistent storage
+chroma_data/
+
+# Raw dataset (third-party content, not redistributable)
+data/
+
+.claude/
