@@ -8,3 +8,8 @@ class AskRequest(BaseModel):
 class AskResponse(BaseModel):
     answer: str
     sources: list[str]
+
+
+class CorpusResponse(BaseModel):
+    count: int
+    topics: list[str]
