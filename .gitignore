@@ -18,3 +18,10 @@ chroma_data/
 data/
 
 .claude/
+
+docs/CODEBASE_GUIDE.md
+docs/req.md
+docs/week7.md
+docs/week8.md
+docs/retro_7_init.md
+docs/retro-7th-week.md
