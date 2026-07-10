@@ -7,7 +7,7 @@ from schemas import AskResponse
 def ask(rag_chain, question: str) -> AskResponse:
     """체인을 호출해 답변과 출처를 반환. 실패 시 500으로 변환."""
     try:
-        result = rag_chain.invoke(question)
+        result = rag_chain.invoke({"question": question})
     except Exception as exc:  # LLM 호출 실패 등
         raise HTTPException(status_code=500, detail=f"RAG 실행 실패: {exc}") from exc
 
