@@ -3,15 +3,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from rag import build_rag_chain
+from graph import build_rag_graph
 from routers.ask import router as ask_router
 from routers.corpus import router as corpus_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 서버 부팅 시 1회: 인덱싱 + 체인 구성
-    app.state.rag = build_rag_chain()
+    app.state.rag = build_rag_graph()
     yield
 
 

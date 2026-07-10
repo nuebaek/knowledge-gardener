@@ -22,15 +22,17 @@ CHROMA_COLLECTION = "cs231n"
 TOP_K = 5
 
 
-def _build_embeddings():
+# ---------------- 임베딩 & 벡터스토어 ----------------
+
+def build_embeddings():
     return HuggingFaceEmbeddings(
         model_name="BAAI/bge-m3",
-        model_kwargs={"device": "cpu"},
+        model_kwargs={"device": "cuda" if os.getenv("USE_CUDA", "false").lower() == "true" else "cpu"},
         encode_kwargs={"normalize_embeddings": True},
     )
 
 
-def _build_chroma_client():
+def build_chroma_client():
     mode = os.getenv("CHROMA_MODE", "local").lower()
     if mode == "cloud":
         return chromadb.CloudClient(
@@ -46,7 +48,7 @@ def _build_chroma_client():
     return chromadb.PersistentClient(path=str(BASE_DIR / "chroma_data"))
 
 
-def _load_split_docs():
+def load_split_docs():
     # 1단계: 헤더 기준 분할로 섹션 단위 의미 보존
     header_splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
@@ -61,12 +63,12 @@ def _load_split_docs():
             sec.metadata["source"] = str(path)
         chunks = char_splitter.split_documents(sections)
         for chunk in chunks:
-            _inject_header_context(chunk)
+            inject_header_context(chunk)
         split_docs.extend(chunks)
     return split_docs
 
 
-def _inject_header_context(doc) -> None:
+def inject_header_context(doc) -> None:
     # page_content에 헤더 정보를 metadata에서 복원
     m = doc.metadata
     parts = [m.get("h1"), m.get("h2"), m.get("h3")]
@@ -75,8 +77,8 @@ def _inject_header_context(doc) -> None:
         doc.page_content = f"{prefix}\n\n{doc.page_content}"
 
 
-def _get_vectorstore(embeddings):
-    client = _build_chroma_client()
+def get_vectorstore(embeddings):
+    client = build_chroma_client()
     existing = {c.name for c in client.list_collections()}
     if CHROMA_COLLECTION in existing:
         if client.get_collection(CHROMA_COLLECTION).count() > 0:
@@ -87,14 +89,20 @@ def _get_vectorstore(embeddings):
             )
         client.delete_collection(CHROMA_COLLECTION)
     return Chroma.from_documents(
-        _load_split_docs(),
+        load_split_docs(),
         embeddings,
         client=client,
         collection_name=CHROMA_COLLECTION,
     )
 
 
-def _build_llm():
+def get_retriever(embeddings, k: int = TOP_K):
+    return get_vectorstore(embeddings).as_retriever(search_kwargs={"k": k})
+
+
+# ---------------- LLM ----------------
+
+def build_llm():
     # 생성 LLM만 provider를 고른다(LLM_PROVIDER).
     if os.getenv("LLM_PROVIDER", "google").lower() == "ollama":
         from langchain_ollama import ChatOllama
@@ -107,6 +115,8 @@ def _build_llm():
         google_api_key=os.getenv("GOOGLE_API_KEY"),
     )
 
+
+# ---------------- 프롬프트 & 체인 조립 ----------------
 
 PROMPT = ChatPromptTemplate.from_messages([
     ("system",
@@ -134,17 +144,16 @@ def _extract_sources(docs):
 
 def ingest():
     """인덱싱만 단독 실행. `uv run python rag.py`"""
-    embeddings = _build_embeddings()
-    vectorstore = _get_vectorstore(embeddings)
+    embeddings = build_embeddings()
+    vectorstore = get_vectorstore(embeddings)
     print(f"인덱싱 완료: {vectorstore._collection.count()}개 청크")
 
 
 def build_rag_chain():
     """인덱싱(필요 시) + LCEL 체인 구성. invoke(question) → {answer, sources}."""
-    embeddings = _build_embeddings()
-    vectorstore = _get_vectorstore(embeddings)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
-    llm = _build_llm()
+    embeddings = build_embeddings()
+    retriever = get_retriever(embeddings)
+    llm = build_llm()
 
     # 검색을 1회만 수행해 답변 생성과 출처 추출이 같은 docs를 공유
     retrieve = RunnableParallel(docs=retriever, question=RunnablePassthrough())
