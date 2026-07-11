@@ -20,6 +20,7 @@ BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data" / "processed"
 CHROMA_COLLECTION = "cs231n"
 TOP_K = 5
+RELEVANCE_THRESHOLD = 0.4
 
 
 # ---------------- 임베딩 & 벡터스토어 ----------------
@@ -129,11 +130,34 @@ PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "You are a document-grounded Q&A assistant. "
      "Answer using ONLY the provided documents — do not rely on prior knowledge or infer beyond what is explicitly written. "
-     "Match your response language to the question (Korean → Korean, English → English). "
-     "If the documents lack sufficient information, say: \"The provided materials do not cover this.\"\n\n"
+     "Match your response language to the question (Korean → Korean, English → English) in EVERY case, "
+     "including when you cannot answer. "
+     "If the documents lack sufficient information, say so clearly in the question's own language — "
+     "for example, Korean: \"제공된 자료에 이 내용이 없습니다.\" / English: \"The provided materials do not cover this.\" "
+     "Never default to English when the question was asked in another language.\n\n"
      "{context}"),
     ("human", "{question}"),
 ])
+
+
+REWRITE_PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "You rewrite search queries for a document retrieval system. "
+     "The query below failed to retrieve relevant documents. "
+     "Rewrite it using more precise or alternative technical terminology, "
+     "or reframe it from a different angle, so that a new search against the same "
+     "corpus is more likely to find relevant material. "
+     "Keep the original intent and scope — do not broaden into a different topic, "
+     "and do not answer the question yourself. "
+     "Match the language of the original query exactly (Korean → Korean, English → English). "
+     "Output ONLY the rewritten query as one line — no explanation, no prefix, no quotes."
+    ),
+    ("human",
+     "Original question to rewrite: \"{question}\"\n"
+     "A previous rewrite attempt also failed to retrieve relevant results: \"{rewritten_question}\"\n\n"
+     "Write ONE new rewritten query, different from the previous attempt."),
+])
+
 
 
 def _format_docs(docs):
