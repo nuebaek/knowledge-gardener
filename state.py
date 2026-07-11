@@ -7,3 +7,7 @@ class GraphState(TypedDict):
     document: list[Document]
     answer: str
     sources: list[str]
+    doc_scores: list[float]
+    is_relevant: bool
+    retry_count: int
+    rewritten_question: str | None
