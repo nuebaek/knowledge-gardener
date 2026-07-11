@@ -7,7 +7,7 @@ from langchain_chroma import Chroma
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableParallel, RunnablePassthrough
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_cerebras import ChatCerebras
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
@@ -104,15 +104,22 @@ def get_retriever(embeddings, k: int = TOP_K):
 
 def build_llm():
     # 생성 LLM만 provider를 고른다(LLM_PROVIDER).
-    if os.getenv("LLM_PROVIDER", "google").lower() == "ollama":
+    provider = os.getenv("LLM_PROVIDER", "cerebras").lower()
+    if provider == "ollama":
         from langchain_ollama import ChatOllama
         return ChatOllama(
             model=os.getenv("OLLAMA_MODEL", "gemma4:e2b"),
             base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         )
-    return ChatGoogleGenerativeAI(
-        model=os.getenv("GOOGLE_MODEL", "gemini-2.5-flash"),
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
+    if provider == "google":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(
+            model=os.getenv("GOOGLE_MODEL", "gemini-2.5-flash"),
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
+        )
+    return ChatCerebras(
+        model=os.getenv("CEREBRAS_MODEL", "gemma-4-31b"),
+        api_key=os.getenv("CEREBRAS_API_KEY"),
     )
 
 
