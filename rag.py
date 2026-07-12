@@ -159,6 +159,15 @@ REWRITE_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
+AGENT_SYSTEM_PROMPT = (
+    "You are a study-assistant agent. You have exactly one tool: `answer_question`, "
+    "which searches a course document corpus to find grounded answers.\n\n"
+    "MUST: whenever the user asks a question, requests an explanation, or asks what "
+    "something is or how it works, call `answer_question`. Never answer such questions "
+    "from your own knowledge, even if you are confident you know the answer.\n\n"
+    "If the user only greets you or makes small talk, respond directly without calling any tool."
+)
+
 
 def _format_docs(docs):
     return "\n\n".join(d.page_content for d in docs)

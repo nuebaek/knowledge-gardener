@@ -1,5 +1,18 @@
+from langgraph.graph import MessagesState
+from langchain_core.messages import SystemMessage
 from rag import _extract_sources, TOP_K, RELEVANCE_THRESHOLD
 from state import GraphState
+
+
+def make_agent_node(llm, tools, system_prompt):
+    llm_with_tools = llm.bind_tools(tools)
+
+    def agent_node(state: MessagesState):
+        messages = [SystemMessage(content=system_prompt)] + state["messages"]
+        response = llm_with_tools.invoke(messages)
+        return {"messages": [response]}
+
+    return agent_node
 
 
 def make_nodes(vectorstore, prompt, rewrite_prompt, llm):
