@@ -3,6 +3,7 @@ from langgraph.prebuilt import tools_condition, ToolNode
 from state import GraphState
 from rag import build_embeddings, build_llm, get_vectorstore, PROMPT, REWRITE_PROMPT, AGENT_SYSTEM_PROMPT
 from nodes import make_nodes, make_agent_node
+from langgraph.checkpoint.memory import InMemorySaver
 
 def route_after_grade(state: GraphState):
     """grade_docs 다음 분기: 관련 있으면 generate, 없으면 retry_count<2 한도 내에서 rewrite_query."""
@@ -11,6 +12,7 @@ def route_after_grade(state: GraphState):
     if state.get("retry_count", 0) >= 2:
         return "generate"
     return "rewrite_query"
+
 
 def build_rag_graph():
     embeddings = build_embeddings()
@@ -51,4 +53,4 @@ def build_agent_graph():
     graph.add_conditional_edges("agent", tools_condition)
     graph.add_edge("tools", "agent")
 
-    return graph.compile()
+    return graph.compile(checkpointer=InMemorySaver())
