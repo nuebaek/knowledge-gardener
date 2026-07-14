@@ -185,7 +185,7 @@ def write_weekly_note(as_of: str | None = None) -> str:
 
 
 # til
-def write_til(
+def write_tilnote(
     what: str,
     learned: str,
     troubleshooting: str,
