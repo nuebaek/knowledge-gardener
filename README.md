@@ -1,129 +1,113 @@
-# Document RAG
+# Knowledge Gardener
 
 ![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![LangChain](https://img.shields.io/badge/LangChain-1C3C3C)
+![LangGraph](https://img.shields.io/badge/LangGraph-1C3C3C)
 
-PDF, HTML, DOCX 등 형식에 관계없이 문서를 Markdown으로 변환해 인덱싱하고, 출처와 함께 답하는 RAG(Retrieval-Augmented Generation) 시스템.
-단순 답변 생성을 넘어 검색 품질 개선과 운영 제약(비용, Rate Limit, 저장소 한도) 해결에 집중했고, 전 과정을 무료 환경(API 무료 한도 + 로컬 모델)에서 구축했다.
+> 개인의 학습 기록을 지속적으로 축적하고, 그 기록을 다시 검색 가능한 지식으로 활용하는 AI 학습 에이전트
 
-검증은 공개 자료인 [CS231n](https://cs231n.github.io/) 강의 노트(스탠퍼드 강의)로 진행했다.
+Knowledge Gardener는 질문에는 근거 있는 답을 주고, 배운 내용은 잊지 않도록 기록해두는 개인 학습 에이전트다. 질문·일일 학습·주간 회고·프로젝트 TIL을 에이전트가 스스로 구분해 처리하고, 새로 쌓인 문서를 다시 지식베이스에 편입시켜 쓸수록 답변이 좋아지는 구조를 목표로 한다.
 
-**핵심 목표**
-- 다양한 형식의 문서를 하나의 검색 가능한 지식베이스로 통합
-- 근거 없는 답변(Hallucination) 최소화
-- 무료 환경에서도 지속 가능한 RAG 파이프라인 구축
+---
+
+## Why
+
+대부분의 개인용 RAG는 문서를 검색해 답을 찾는 것에서 끝난다. 하지만 실제 학습은 검색보다 배운 내용을 다시 꺼내 설명하고, 기존 지식과 연결하는 과정에서 이루어진다.
+
+Dunlosky 외(2013)의 학습 기법 메타분석(*Improving Students' Learning With Effective Learning Techniques*)에서도 **인출 연습(practice testing)** 과 **분산 복습(distributed practice)** 은 학습 효과가 높은 전략으로 평가된 반면, 요약이나 재독처럼 많이 사용하는 방법은 효과가 상대적으로 낮았다.
+
+Knowledge Gardener는 이러한 학습 원칙을 서비스 설계에 반영했다.
+
+- 질문을 하면 근거 문서를 검색해 답변한다.
+- 하루를 마칠 때는 `write_daily`가 오늘 배운 내용을 자신의 말로 정리하게 한다.
+- 단순 요약이 아니라 '이 개념이 무엇과 연결되는가?'를 함께 기록해 기존 지식과 연결하도록 유도한다.
+- 주간 단위에서는 `write_weekly`가 일일 기록을 다시 묶어 회고하도록 하여 자연스럽게 분산 복습이 이루어진다.
+
+이렇게 만들어진 학습 기록은 다시 검색 가능한 지식베이스에 편입된다. 즉, 이 프로젝트는 **질문에 답하는 RAG**와 **학습 기록을 축적하는 시스템**을 하나의 에이전트 안에서 연결해, 사용할수록 개인의 지식이 함께 성장하는 구조를 목표로 한다.
+
+---
+
+## 주요 기능
+
+**근거 기반 질의응답** (`answer_question`)  
+검색된 문서에 근거해서만 답변하고 출처를 함께 반환한다. 관련도가 낮으면 질문을 다시 써서 재검색한다(최대 2회).
+
+**학습 기록 자동 저장** (`write_daily` / `write_weekly` / `write_til`)  
+회고형 발화에서 언급된 내용만 구조화해 일간·주간·프로젝트 단위로 저장한다. 언급 안 된 내용은 지어내지 않고 되묻는다.
+
+**질문 vs 회고, 에이전트가 스스로 판단**  
+LLM이 tool description을 보고 스스로 호출을 판단한다(tool-calling). `thread_id`로 멀티턴 맥락이 유지된다.
+
+---
+
+## 데모
+
+```
+POST /converse {"message": "Transformer의 Encoder와 Decoder 차이가 뭐야?", "thread_id": "t1"}
+   ↓
+Agent가 answer_question 호출 → retrieve → grade_docs
+   ├─ score ≥ 0.4 → generate: 문서 근거로 답변 생성
+   └─ score < 0.4 → rewrite_query → retrieve 재시도 (최대 2회)
+   ↓
+{"answer": "...", "tools_used": [], "saved_documents": []}
+
+POST /converse {"message": "오늘 LangGraph 공부했고 tool-calling 배웠어. 정리해줘", "thread_id": "t1"}
+   ↓
+Agent가 write_daily 호출 (인자 검증 실패 시 에러 메시지 보고 자동 재시도)
+   ↓
+data/writer/dailynote/*.md 저장
+   ↓
+{"answer": "...", "tools_used": ["write_daily"], "saved_documents": [{"type": "write_daily", "file_name": "..."}]}
+```
 
 ---
 
 ## 아키텍처
 
-![Architecture](docs/architecture.svg)
+![Architecture](docs/knowledge-gardener-architecture.svg)
 
-인덱싱(서버 시작 시 1회)과 질의(매 요청)를 분리했고, 모든 실행은 LangSmith로 추적, 평가된다.
+서버 시작 시 에이전트 그래프를 한 번만 구성해 재사용한다.   
+사용자 메시지가 오면 LLM이 시스템 프롬프트와 대화 맥락을 보고 `answer_question` (검색) 또는 `write_daily` / `write_weekly` / `write_til` (저장) 중 하나를 부르거나, 되묻는다.  
+모든 실행은 LangSmith로 추적, 평가된다.
 
 ---
 
 ## 기술 스택
 
-| 영역 | 선택 | 채택 근거 |
+| 영역 | 선택 | 이유 |
 |---|---|---|
-| 프레임워크 | LangChain (LCEL) | 검색-프롬프트-LLM을 파이프로 연결, 부품 교체만으로 A/B 실험 용이 |
-| 전처리 | [markitdown](https://github.com/microsoft/markitdown) | 형식(PDF, HTML, DOCX)이 달라도 하나의 코드로 Markdown 통일 (Microsoft 오픈소스) |
-| 청킹 | Markdown Header Splitter | 글자 수 분할은 섹션을 쪼개 검색 부정확 → 헤더 단위 분할로 의미 보존 |
-| 임베딩 | 로컬 `BAAI/bge-m3` | Gemini 임베딩 일일 한도 초과로 재인덱싱 불가 → 로컬 전환으로 무제한, 무료, 다국어 지원 |
-| 벡터 DB | Chroma `PersistentClient` | Cloud 무료 300 레코드 제한 → 로컬 디스크 영속 저장, 재실행에도 인덱스 재사용 |
-| 생성 LLM | Gemini Flash / Ollama | 같은 코드로 교체해 품질·속도·비용 A/B 비교 |
-| 서빙 | FastAPI + lifespan | 인덱싱은 시작 시 1회, 요청마다 검색·생성만 — 인덱싱↔생성 분리 |
-| 평가 | LangSmith | 답변 품질을 Dataset 점수로 측정 + 실행 과정 추적 |
-
-### 모델 구성
-
-| 역할 | 모델 |
-|---|---|
-| 임베딩 | `BAAI/bge-m3` |
-| 답변 생성 | `gemini-2.5-flash` or `gemma4:e4b` |
-| 평가 Judge | `gemini-3.5-flash` |
-
----
-
-## 주요 설계 결정
-
-처음 계획과 실제 구현이 달라진 지점들. 제약이 설계를 바꾼 경우다.
-
-| 결정 | 처음 계획 | 실제 선택 | 이유 |
-|---|---|---|---|
-| 임베딩 | Gemini API | 로컬 `bge-m3` | 일일 한도 초과 — 재인덱싱 불가, 실험 자체가 막힘 |
-| 벡터 DB | Chroma Cloud | `PersistentClient` | 무료 300 레코드 → 청크 478개 초과 |
-| 체인 생성 시점 | 요청마다 | 서버 시작 시 1회(`lifespan`) | 요청마다 임베딩·인덱싱 비용 발생 |
-| 평가·서빙 공유 | 각자 구현 | `build_rag_chain()` 공통화 | 평가와 서빙이 다른 로직이면 점수가 품질을 보장하지 못함 |
+| 에이전트 오케스트레이션 | LangGraph StateGraph + tool-calling (`bind_tools`, `InMemorySaver`) | 조건 분기·재시도·대화 메모리는 단일 체인(LCEL)으로 표현 불가 |
+| 문서 전처리 | [markitdown](https://github.com/microsoft/markitdown) + Markdown Header Splitter | 형식(PDF/HTML/DOCX) 통일 + 헤더 단위 분할로 검색 시 의미 보존 |
+| 검색 재시도 | score 기반 `grade_docs` + `rewrite_query` (최대 2회) | top1 relevance score < 0.4면 재검색, 상한으로 무한루프 방지 |
+| 임베딩 · 벡터 DB | 로컬 `BAAI/bge-m3` + Chroma `PersistentClient` | API/Cloud 무료 한도 초과 → 로컬 전환으로 무제한·무료 |
+| 생성 LLM | `gemini-2.5-flash` · `gemma4:e2b`(Ollama) · `gemma-4-31b`(Cerebras, 기본) | provider만 바꿔 같은 코드로 품질·속도·비용 A/B 비교 |
+| 서빙 · 평가 | FastAPI(`lifespan`으로 그래프 1회 구성) + LangSmith | 요청마다 `invoke()`만 호출, 전 실행 추적·평가 |
 
 ---
 
 ## 프로젝트 구조
 
 ```
-rag-project/
-├── main.py            # FastAPI 진입점 (lifespan에서 체인 1회 구성)
-├── rag.py             # RAG 엔진: 인덱싱 + 체인 (build_rag_chain / ingest)
-├── routers/ask.py     # POST /ask 라우터
-├── controllers/rag.py # 체인 호출 + 에러 처리
-├── schemas.py         # 요청/응답 모델
-├── baseline.py        # LangSmith 평가 스크립트
-├── preprocess.py      # data/raw → markitdown → data/processed
-├── data/              # raw(원본) & processed(md)   ← gitignore
-├── chroma_data/       # 벡터 DB                      ← gitignore
-├── docs/
-└── pyproject.toml
+kaia-project/
+├── main.py                    # FastAPI 진입점 (lifespan에서 에이전트 그래프 1회 구성)
+├── graph.py                   # QA 그래프(재검색 루프) / 에이전트 그래프(tool-calling+메모리)
+├── nodes.py                   # retrieve / generate / grade_docs / rewrite_query 노드
+├── tools.py                   # answer_question / write_daily / write_weekly / write_til
+├── writer.py                  # 노트 저장 로직 (프론트매터 + LLM 본문)
+├── rag.py                     # 임베딩·벡터스토어·LLM 빌더
+├── state.py                   # GraphState 정의
+├── routers/converse.py        # POST /converse, GET /threads/{thread_id}
+├── routers/corpus.py          # 코퍼스 조회
+├── controllers/rag.py         # 그래프 호출 + 응답 변환 + 에러 처리
+├── schemas.py                 # 요청/응답 모델
+├── preprocess.py              # data/raw → markitdown → data/processed
+├── baseline.py                # LangSmith 평가 스크립트
+├── prompts/                   # 콘텐츠 프롬프트
+├── static/                    # 프론트엔드 (대화형 UI, /converse 기반)
+├── data/, chroma_data/        # ← gitignore
+└── docs/
 ```
-
----
-
-## 평가 결과
-
-`cs231n-rag-eval` (CS231n 핵심 개념 Q&A 5쌍)으로 세 지표를 측정한다. 
-
-| 지표 | 의미 | 방식 |
-|---|---|---|
-| `keyword_recall` | 기대 답변의 핵심 내용어 회수율 | 휴리스틱(0~1) |
-| `llm_judge_semantic_match` | 기대 답변과 의미 일치 여부 | LLM Judge(0 / 0.5 / 1) |
-| `answer_relevancy` | 질문에 직접 대답하는지 | LLM Judge(0 / 0.5 / 1) |
-
-**생성 모델 비교** (검색 전략 고정, 생성 모델만 교체)
-
-| 생성 LLM | keyword_recall | llm_judge | answer_relevancy | latency(P50/P99) |
-|---|---|---|---|---|
-| gemini-2.5-flash (API) | 0.37 | 0.90 | 0.90 | 8.5s / 29.5s | 
-| gemma4:e4b (로컬 ollama) | 0.37 | 0.90 | 1.00 | 27.8s / 40.2s | 
-
-
-![LangSmith 비교 요약](docs/langsmith-summary.png)
-*Feedback Scores · Latency(P50/P99) · Token Count · Cost 비교 (A: gemini-2.5-flash vs B: gemma4:e4b)*
-
-<details>
-<summary>문항별 실측치 (latency)</summary>
-
-| 문항 | gemini latency | gemma latency |
-|---|---|---|
-| Q1 Conv vs FC layer | 5.4s | 35.8s |
-| Q2 ResNet 혁신 | 2.6s | 22.4s |
-| Q3 이미지 분류 과제 | 29.5s  | 27.8s |
-| Q4 배치 정규화 역할 | 8.6s | 24.2s |
-| Q5 역전파 그래디언트 계산 | 8.5s  | 40.2s |
-
-
-</details>
-
----
-
-## 트러블슈팅
-
-| 문제 | 원인 | 해결 |
-|---|---|---|
-| Gemini 임베딩 429 / 일일 한도 | 청크 수만큼 API를 호출해 무료 한도 소진 | 로컬 `bge-m3`로 전환 |
-| Chroma Cloud 저장 실패 | 무료 티어 300 레코드 → 청크 478개 초과 | `PersistentClient`(로컬 디스크) |
-| Q3 "자료에서 확인 불가" | CS231n의 `**Challenges**` 볼드 헤더를 Splitter가 인식 못해 청크 맥락 소실 | `_inject_header_context`로 서브청크에 헤더 경로 재주입하여 개선 |
-| 요청마다 인덱싱 반복 | 체인을 요청 시마다 새로 생성 | `lifespan`으로 서버 시작 시 1회만 구성, `app.state`에 보관 |
 
 ---
 
@@ -131,28 +115,29 @@ rag-project/
 
 ```bash
 uv sync
-cp .env.example .env          # 본인 키 입력 (실제 키 커밋 금지)
+cp .env.example .env          # LLM_PROVIDER=google|ollama|cerebras, 실제 키 커밋 금지
 
 uv run python preprocess.py   # data/raw/* → data/processed/*.md
-uv run python rag.py          # 인덱싱 (chroma_data 생성)
-uv run uvicorn main:app --reload   # 서버 (http://localhost:8000/docs)
-uv run python baseline.py     # 평가
+uv run python rag.py          # 인덱싱 (chroma_data 생성, 최초 1회)
+uv run fastapi dev main.py    # 서버 (http://localhost:8000/docs)
 ```
 
-`/docs`에서 API 스펙과 예시 요청을 바로 확인할 수 있다. 답변은 질문 언어를 따른다(한국어 질문 → 한국어 답변). 에러: 빈 질문 `422` / 검색 0건 `404` / LLM 실패 `500`.
+`/docs`에서 API 스펙과 예시 요청을 바로 확인할 수 있다.
 
 ---
 
-## 앞으로 개선할 점
+## 로드맵
 
-- **리랭커 추가** — 검색 수(k)를 크게 늘리고 리랭커로 재정렬해 정밀도 개선
-- **RAGAS 도입** — faithfulness, context_precision 등 더 다양한 지표로 평가
-- **Judge 분리** — 프론티어 모델로 자가평가 편향 제거
-- **코퍼스 확장** — 더 다양한 문서로 확장 (Phase 2)
-- **Agentic RAG** — LangGraph 기반 다단계 검색, 추론 (Phase 3)
+| 구성 | 계획 | 시점 |
+|---|---|---|
+| Graph RAG | 개체·관계를 그래프로 저장해 벡터 검색과 함께 다중 홉 질문에 답변 | 미정 |
+| 학습 기록 재인덱싱 | 저장된 학습일지를 기존 인덱싱 파이프라인에 그대로 편입 — 쓸수록 코퍼스가 늘고 답변 근거도 풍부해지는 구조 | 미정 |
+| Hub 고도화 | 재검색을 LLM 채점으로 교체, RAGAS 평가 도입, BM25 하이브리드 검색 | 미정 |
+| Input Layer | 판서 인식(OCR), 북마크 흡수 | 미정 |
+| Output Layer | Graph RAG 기반 마인드맵 시각화 | 미정 |
 
 ---
 
 ## 회고
 
-[7주차 회고](docs/retro-week7.md)
+- [7주차 회고](docs/retro-week7.md) — FastAPI 서빙 + LangSmith 평가 도입, 평가 결과 수치(모델 비교, latency 실측)
