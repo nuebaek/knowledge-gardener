@@ -4,10 +4,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>🔍 Document RAG</title>
+  <title>🌱 Knowledge Gardener</title>
   <link rel="icon"
-    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔍</text></svg>" />
-  <meta name="description" content="문서 형식에 관계없이 색인하고, 출처와 함께 답하는 RAG 시스템" />
+    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌱</text></svg>" />
+  <meta name="description" content="질문에는 근거를, 학습 기록에는 저장할 자리를 주는 개인 학습 에이전트" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -18,47 +18,43 @@
 </head>
 
 <body>
-  <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
-  <main class="page">
+  <div id="root-app" class="app">
     <header class="head">
-      <p class="eyebrow">retrieval-augmented generation</p>
-      <h1 class="title">Document RAG</h1>
-      <p class="sub">
-        형식에 관계없이 문서를 색인하고, 근거가 된 출처와 함께 답합니다.
-      </p>
-      <p class="corpus-note" id="corpus-note" hidden></p>
+      <div class="head-main">
+        <h1 class="title"><span class="title-dot" aria-hidden="true"></span>Knowledge Gardener</h1>
+        <p class="sub">근거로 답하고, 기록으로 남깁니다.</p>
+      </div>
+      <div class="head-meta">
+        <span class="corpus-tag" id="corpus-tag" hidden></span>
+      </div>
     </header>
 
-    <form id="ask-form" class="prompt-bar" autocomplete="off">
-      <label class="sr-only" for="question">질문 입력</label>
-      <span class="prompt-caret" aria-hidden="true">&gt;</span>
-      <input id="question" name="question" type="text" placeholder="색인된 문서에 대해 물어보세요" required />
-      <button type="submit" id="submit-btn" aria-label="질문하기">↵</button>
+    <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
+
+    <main class="transcript" id="transcript">
+      <div class="transcript-inner" id="transcript-inner">
+        <div class="empty" id="empty-state">
+          <div class="empty-seed" aria-hidden="true">
+            <span class="empty-glow"></span>
+            <span class="empty-stub"></span>
+          </div>
+          <p class="empty-text">질문하거나, 오늘 배운 내용을 정리해보세요.</p>
+          <p class="empty-hint">근거가 있으면 답하고, 기록할 내용이면 저장해둡니다.</p>
+          <div class="examples" id="examples" role="group" aria-label="질문 예시" hidden></div>
+        </div>
+      </div>
+    </main>
+
+    <form class="composer" id="composer" autocomplete="off">
+      <label class="sr-only" for="message">메시지 입력</label>
+      <div class="prompt-bar">
+        <span class="prompt-caret" aria-hidden="true">&gt;</span>
+        <input id="message" name="message" type="text" placeholder="질문 또는 오늘 배운 내용" required />
+        <button type="submit" id="submit-btn" aria-label="보내기">↵</button>
+      </div>
     </form>
+  </div>
 
-    <div class="examples" id="examples" role="group" aria-label="질문 예시" hidden></div>
-
-    <div class="flow" id="flow" aria-hidden="true">
-      <div class="flow-line"></div>
-      <div class="flow-dot"></div>
-    </div>
-
-    <p class="status" id="status" hidden>
-      <span id="status-text">retrieving sources</span><span class="dots"><span></span><span></span><span></span></span>
-    </p>
-
-    <section class="result" id="result" hidden>
-      <h2 class="label">answer</h2>
-      <div class="answer" id="answer-text"></div>
-      <h2 class="label sources-label">sources</h2>
-      <div class="sources" id="sources"></div>
-    </section>
-
-    <section class="state-panel" id="state-panel" hidden>
-      <h2 class="label" id="state-label">no match</h2>
-      <p class="state-text" id="state-text"></p>
-    </section>
-  </main>
   <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
