@@ -4,6 +4,12 @@
    agent's own voice, amber is reserved only for the moment something gets filed away.
    light is the base; dark follows the system automatically — no manual toggle.
 
+   type: one gothic (sans) family, Pretendard, end to end — titles and body both,
+   hierarchy carried by weight/size/color rather than a second typeface. It also fixes
+   a real bug: Inter has no Hangul glyphs, so every piece of Korean text on this page
+   was silently falling back to the OS system font regardless of what --sans said.
+   JetBrains Mono stays for meta/code/labels, where its engineering register is right.
+
    type scale: 11 / 13 / 15 / 16 / 20px — meta, caption, control, body, title.
    spacing: 4px base grid throughout (0.25rem steps). radius: 6px controls, 8px cards,
    999px pills, 50% dots — two tiers, nothing in between. */
@@ -36,8 +42,8 @@
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 
-  --display: "Inter", -apple-system, "Segoe UI", sans-serif;
-  --sans: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --display: "Pretendard", -apple-system, "Segoe UI", sans-serif;
+  --sans: "Pretendard", -apple-system, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
@@ -109,15 +115,150 @@ body {
   border: 0;
 }
 
-/* ---- shell ---- */
+/* ---- shell ----
+   rail (fixed) + one active panel at a time. panels are full siblings, not routes —
+   switching is instant, no navigation cost, matching how someone actually moves between
+   "ask something" / "read a source" / "find a passage" while studying. */
 .app {
   height: 100%;
   display: flex;
-  flex-direction: column;
 }
 
-/* ---- header ---- */
-.head {
+/* ---- rail: garden-tool row, not an icon dock ----
+   each destination is a growth-dot + label, the same visual unit the chat timeline uses
+   for a turn. picking a panel isn't chrome navigation here, it's "which bed am I tending." */
+.rail {
+  flex: none;
+  width: 4.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.25rem 0 1rem;
+  border-right: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.rail-mark {
+  flex: none;
+  margin-bottom: 1.75rem;
+}
+
+.rail-mark-dot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--moss);
+  box-shadow: 0 0 14px 3px var(--moss-soft);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+.rail-tabs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rail-tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  width: 3.75rem;
+  padding: 0.5rem 0.25rem;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--ink-mute);
+  cursor: pointer;
+  transition: color 0.15s var(--ease-out), background 0.15s var(--ease-out),
+    transform 0.1s var(--ease-out);
+}
+
+.rail-tab:active {
+  transform: scale(0.95);
+}
+
+.rail-tab-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--ink-mute);
+  transition: color 0.15s var(--ease-out);
+}
+
+.rail-tab-label {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+}
+
+.rail-tab:hover {
+  color: var(--ink-dim);
+  background: var(--bg-inset);
+}
+
+.rail-tab:hover .rail-tab-icon {
+  color: var(--ink-faint);
+}
+
+.rail-tab[aria-selected="true"] {
+  color: var(--ink);
+  background: var(--moss-soft);
+}
+
+.rail-tab[aria-selected="true"] .rail-tab-icon {
+  color: var(--moss);
+}
+
+.rail-tab[aria-selected="true"]::before {
+  content: "";
+  position: absolute;
+  left: -0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 1.35rem;
+  border-radius: 0 2px 2px 0;
+  background: var(--moss);
+}
+
+.rail-tab:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+.rail-foot {
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
+.rail-foot .corpus-tag {
+  display: block;
+  width: 3.75rem;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--ink-mute);
+  text-wrap: balance;
+}
+
+/* ---- panel: one active view, full remaining space ---- */
+.panel {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---- panel header: shared by chat / documents / search ---- */
+.panel-head {
   flex: none;
   padding: 1.25rem clamp(1.25rem, 4vw, 2.5rem) 1rem;
   border-bottom: 1px solid var(--rule);
@@ -127,19 +268,19 @@ body {
   gap: 1rem;
 }
 
-.head-main {
+.panel-head-main {
   min-width: 0;
 }
 
-.title {
+.panel-title {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   font-family: var(--display);
   font-weight: 700;
-  font-size: 1.25rem;
-  letter-spacing: -0.02em;
-  margin: 0 0 0.25rem;
+  font-size: 1.5rem;
+  letter-spacing: 0;
+  margin: 0 0 0.3rem;
   color: var(--ink);
   text-wrap: balance;
 }
@@ -152,7 +293,7 @@ body {
   background: var(--moss);
 }
 
-.sub {
+.panel-sub {
   font-size: 0.8125rem;
   line-height: 1.5;
   color: var(--ink-faint);
@@ -161,7 +302,7 @@ body {
   text-wrap: pretty;
 }
 
-.head-meta {
+.panel-head-meta {
   flex: none;
   text-align: right;
   font-family: var(--mono);
@@ -171,8 +312,45 @@ body {
   line-height: 1.7;
 }
 
-.head-meta .corpus-tag {
-  display: block;
+/* new chat starts a fresh thread_id — same bordered/mono control language as
+   .retry-btn and .chip-example, just neutral (moss) instead of rust/hover-moss */
+.new-chat-btn {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+  background: none;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
+    background 0.15s var(--ease-out), transform 0.1s var(--ease-out);
+}
+
+.new-chat-icon {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.new-chat-btn:hover {
+  color: var(--moss);
+  border-color: var(--moss);
+  background: var(--moss-soft);
+}
+
+.new-chat-btn:active {
+  transform: scale(0.97);
+}
+
+.new-chat-btn:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
 }
 
 /* ---- transcript ---- */
@@ -233,13 +411,74 @@ body {
   background: var(--rule);
 }
 
+/* ---- sprout mark: the one elaborate moment in the whole app ----
+   everywhere else the growth-line stays a plain dot — this is the single place it's
+   allowed to actually look like something growing. stem draws in with a dash-offset
+   wipe, the two leaves unfurl just after, the seed settles into the same breathing
+   pulse the rail/timeline dots already use. reserved for the chat panel's blank page,
+   the one screen this app is actually built around. */
+.sprout-mark {
+  display: block;
+  margin: 0 auto 1.5rem;
+  overflow: visible;
+}
+
+.sprout-stem {
+  fill: none;
+  stroke: var(--moss);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: stem-grow 0.7s var(--ease-out) 0.1s forwards;
+}
+
+.sprout-leaf {
+  fill: var(--moss);
+  opacity: 0;
+  transform-origin: 24px 24px;
+  animation: leaf-unfurl 0.5s var(--ease-out) forwards;
+}
+
+.sprout-leaf-l {
+  animation-delay: 0.55s;
+}
+
+.sprout-leaf-r {
+  animation-delay: 0.72s;
+}
+
+.sprout-seed {
+  fill: var(--moss);
+  transform-origin: 24px 58px;
+  animation: breathe 2.4s ease-in-out 0.9s infinite;
+}
+
+@keyframes stem-grow {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes leaf-unfurl {
+  from {
+    opacity: 0;
+    transform: scale(0.4) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 .empty-text {
-  font-family: var(--sans);
+  font-family: var(--display);
   font-weight: 500;
-  font-size: 1.0625rem;
-  color: var(--ink-dim);
-  line-height: 1.6;
-  margin: 0 0 0.5rem;
+  font-size: 1.375rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  line-height: 1.5;
+  margin: 0 0 0.6rem;
   text-wrap: pretty;
 }
 
@@ -459,6 +698,73 @@ body {
   color: var(--moss);
 }
 
+/* headings/tables/images only really show up in the document reader, but living on
+   .agent-text means a chat answer that happens to include them renders consistently too */
+.agent-text h1,
+.agent-text h2,
+.agent-text h3,
+.agent-text h4 {
+  font-family: var(--display);
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  margin: 1.6em 0 0.6em;
+}
+
+.agent-text > h1:first-child,
+.agent-text > h2:first-child,
+.agent-text > h3:first-child {
+  margin-top: 0;
+}
+
+.agent-text h1 {
+  font-size: 1.375rem;
+}
+
+.agent-text h2 {
+  font-size: 1.1875rem;
+}
+
+.agent-text h3 {
+  font-size: 1.0625rem;
+}
+
+.agent-text h4 {
+  font-size: 1rem;
+}
+
+.agent-text hr {
+  border: none;
+  border-top: 1px solid var(--rule-strong);
+  margin: 2em 0;
+}
+
+.agent-text img {
+  max-width: 100%;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--rule-strong);
+}
+
+.agent-text table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1em;
+  font-size: 0.875rem;
+}
+
+.agent-text th,
+.agent-text td {
+  border: 1px solid var(--rule-strong);
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+
+.agent-text th {
+  font-weight: 600;
+  background: var(--bg-inset);
+}
+
 .agent-text .katex-display {
   overflow-x: auto;
   overflow-y: hidden;
@@ -467,7 +773,7 @@ body {
 
 /* label above "answer" turns */
 .turn-label {
-  font-family: var(--display);
+  font-family: var(--sans);
   font-weight: 600;
   font-size: 0.6875rem;
   letter-spacing: 0.14em;
@@ -502,7 +808,7 @@ body {
 }
 
 .filed-tab .filed-type {
-  font-family: var(--display);
+  font-family: var(--sans);
   font-weight: 600;
   font-size: 0.8125rem;
   color: var(--amber);
@@ -593,12 +899,12 @@ body {
   max-width: 42rem;
   margin: 0 auto;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 0.75rem;
   background: var(--bg-raised);
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius-card);
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 1rem;
   box-shadow: var(--shadow-raised);
   transition: border-color 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
 }
@@ -608,41 +914,33 @@ body {
   box-shadow: var(--shadow-raised), 0 0 0 3px var(--moss-soft);
 }
 
-/* idle caret blinks like it's waiting for you — same "living dot" family as the
-   rail's pending pulse and the empty-state seed. it settles once you start typing. */
+/* static, not blinking — a plain prompt marker, not a cursor pretending to wait */
 .prompt-caret {
   font-family: var(--mono);
   color: var(--moss);
   font-weight: 600;
-  animation: caretBlink 1.1s steps(1) infinite;
+  padding-bottom: 0.3rem;
 }
 
-.prompt-bar:focus-within .prompt-caret {
-  animation: none;
-  opacity: 1;
-}
-
-@keyframes caretBlink {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.25;
-  }
-}
-
-.prompt-bar input {
+.prompt-bar textarea {
   flex: 1;
   min-width: 0;
   background: none;
   border: none;
   outline: none;
+  resize: none;
   color: var(--ink);
   font-family: var(--mono);
   font-size: 0.9375rem;
+  line-height: 1.5;
+  padding: 0.3rem 0;
+  /* one line by default, grows up to ~3 before it scrolls internally — same idea
+     as Claude's own composer, just capped so the rest of the transcript stays put */
+  max-height: 4.8rem;
+  overflow-y: auto;
 }
 
-.prompt-bar input::placeholder {
+.prompt-bar textarea::placeholder {
   color: var(--ink-mute);
 }
 
@@ -680,21 +978,359 @@ body {
   cursor: not-allowed;
 }
 
-.prompt-bar input:focus-visible,
 .prompt-bar button:focus-visible,
 .chip-example:focus-visible {
   outline: 2px solid var(--moss);
   outline-offset: 2px;
 }
 
+/* ---- documents panel: index-card list + reader ----
+   the reader sits on --bg-raised-2 (the same sage tint the "filed" tabs use elsewhere)
+   instead of --bg-raised — a quiet temperature shift that separates "reading a source"
+   from "reading a chat bubble" without introducing a new hue. */
+.doc-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.doc-list {
+  flex: none;
+  width: 18rem;
+  overflow-y: auto;
+  border-right: 1px solid var(--rule);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.doc-list-status {
+  margin: 2rem 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-mute);
+  text-align: center;
+}
+
+/* failed fetches read as failures, not neutral status text — same rust the chat
+   error turn already uses, so a broken load looks consistent everywhere it happens */
+.status-error {
+  color: var(--rust);
+}
+
+/* ---- skeleton loaders: shaped like the content that's about to land, not a spinner ---- */
+@keyframes shimmer {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.skeleton-card {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.skeleton-line {
+  height: 0.6rem;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-card:nth-child(2) .skeleton-line {
+  animation-delay: 0.1s;
+}
+
+.skeleton-card:nth-child(3) .skeleton-line {
+  animation-delay: 0.2s;
+}
+
+.skeleton-line.w-60 {
+  width: 60%;
+}
+
+.skeleton-line.w-90 {
+  width: 90%;
+}
+
+.skeleton-line.w-40 {
+  width: 40%;
+}
+
+.skeleton-card--plain {
+  border: none;
+  padding: 0;
+  gap: 0.85rem;
+}
+
+.skeleton-card--plain .skeleton-line {
+  height: 0.7rem;
+}
+
+.skeleton-card--plain .skeleton-line.w-40 {
+  height: 1rem;
+}
+
+.doc-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.7rem 0.8rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  transition: background 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
+    transform 0.1s var(--ease-out);
+}
+
+.doc-card:hover {
+  border-color: var(--rule-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+.doc-card:active {
+  transform: scale(0.99);
+}
+
+.doc-card[aria-current="true"] {
+  background: var(--moss-soft);
+  border-color: var(--moss);
+}
+
+.doc-card-title {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--ink);
+  margin: 0 0 0.3rem;
+  text-wrap: pretty;
+}
+
+.doc-card-excerpt {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  margin: 0 0 0.4rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.doc-card-meta {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.03em;
+  color: var(--ink-mute);
+}
+
+.doc-reader {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--bg-raised-2);
+  padding: clamp(1.5rem, 4vw, 3rem);
+}
+
+.doc-reader-empty {
+  max-width: 24rem;
+  margin: 4rem auto 0;
+  text-align: center;
+}
+
+.doc-reader-empty .empty-text {
+  font-size: 0.9375rem;
+}
+
+.doc-reader-status {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-mute);
+  text-align: center;
+  margin-top: 3rem;
+}
+
+.doc-reader-body {
+  max-width: 42rem;
+  margin: 0 auto;
+}
+
+.doc-reader-head {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.doc-reader-title {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.375rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0 0 0.35rem;
+  text-wrap: balance;
+}
+
+.doc-reader-file {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  color: var(--ink-mute);
+  margin: 0;
+}
+
+.doc-reader-content {
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+/* ---- search panel ---- */
+.search-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.search-bar {
+  flex: none;
+  margin: 1.25rem clamp(1.25rem, 4vw, 2.5rem) 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--bg-inset);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-card);
+  padding: 0.65rem 0.9rem;
+  transition: border-color 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
+}
+
+.search-bar:focus-within {
+  border-color: var(--moss);
+  box-shadow: 0 0 0 3px var(--moss-soft);
+}
+
+.search-icon {
+  flex: none;
+  font-family: var(--mono);
+  color: var(--ink-mute);
+  font-size: 1rem;
+}
+
+.search-bar input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.9375rem;
+}
+
+.search-bar input::placeholder {
+  color: var(--ink-mute);
+}
+
+.search-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem clamp(1.25rem, 4vw, 2.5rem) 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.search-hint {
+  margin: 3rem auto 0;
+  color: var(--ink-faint);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.search-hit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.85rem 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out),
+    transform 0.1s var(--ease-out);
+}
+
+.search-hit:hover {
+  border-color: var(--rule-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+.search-hit:active {
+  transform: scale(0.99);
+}
+
+.search-hit-title {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--ink);
+  margin: 0 0 0.15rem;
+}
+
+.search-hit-section {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin: 0 0 0.45rem;
+}
+
+.search-hit-snippet {
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--ink-dim);
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.search-hit-snippet mark {
+  background: var(--moss-soft);
+  color: var(--moss);
+  border-radius: 2px;
+  padding: 0 0.1em;
+  font-weight: 600;
+}
+
 /* ---- motion & accessibility ---- */
 @media (prefers-reduced-motion: reduce) {
   .turn,
   .rail-dot,
+  .rail-mark-dot,
   .empty-glow,
-  .prompt-caret {
+  .skeleton-line,
+  .sprout-stem,
+  .sprout-leaf,
+  .sprout-seed {
     animation: none !important;
     transition: none !important;
+  }
+  .skeleton-line {
+    opacity: 0.7;
   }
   .kind-pending .rail-dot {
     opacity: 1;
@@ -703,24 +1339,112 @@ body {
     opacity: 1;
     transform: none;
   }
-  .prompt-caret {
+  .sprout-stem {
+    stroke-dashoffset: 0;
+  }
+  .sprout-leaf {
     opacity: 1;
+    transform: none;
   }
 }
 
-@media (max-width: 30rem) {
-  .head {
+/* ---- narrow screens: rail folds to a top bar, documents stack list-over-reader ---- */
+@media (max-width: 40rem) {
+  .app {
+    flex-direction: column;
+  }
+
+  .rail {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .rail-mark {
+    display: none;
+  }
+
+  .rail-tabs {
+    flex-direction: row;
+  }
+
+  .rail-tab {
+    flex-direction: row;
+    width: auto;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .rail-tab[aria-selected="true"]::before {
+    left: 50%;
+    top: auto;
+    bottom: -1px;
+    transform: translateX(-50%);
+    width: 1.25rem;
+    height: 2px;
+    border-radius: 2px 2px 0 0;
+  }
+
+  .rail-foot {
+    margin-top: 0;
+    margin-left: auto;
+    padding-top: 0;
+  }
+
+  .rail-foot .corpus-tag {
+    width: auto;
+    text-wrap: nowrap;
+  }
+
+  .panel-head {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.375rem;
   }
-  .head-meta {
+
+  .panel-head-meta {
     text-align: left;
   }
+
+  .new-chat-btn {
+    align-self: flex-start;
+  }
+
   .turn {
     gap: 0.5rem;
   }
+
+  .empty-text {
+    font-size: 1.1875rem;
+    max-width: 21rem;
+    margin-left: auto;
+    margin-right: auto;
+    text-wrap: wrap;
+  }
+
   .prompt-bar {
     padding: 0.5rem 0.75rem;
+  }
+
+  .doc-layout {
+    flex-direction: column;
+  }
+
+  .doc-list {
+    width: 100%;
+    max-height: 9.5rem;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .doc-card {
+    flex: none;
+    width: 14rem;
   }
 }
