@@ -22,23 +22,28 @@ def make_tools():
         return f"{result['answer']}\n\n(출처: {sources})"
 
     @tool(parse_docstring=True)
-    def write_daily(topic: str, learned: str, related_concepts: list[str] | None = None) -> str:
+    def write_daily(topic: str, learned: str, related_concepts: list[str] | str | None = None) -> str:
         """Write and save a structured daily learning note about what the user studied today.
         Use this when the user wants to record, organize, or write down what they learned in
         a study or lecture session today — e.g. "오늘 공부한 거 정리해줘", "write today's notes",
         or any description of what was studied today.
         Do NOT use this to answer questions or explain a concept — use `answer_question` for that.
         Do NOT use this for retrospectives about a project or task — use `write_til` for that.
-        
+
         Extract every value only from what the user explicitly said in this conversation.
         Never invent, infer, or add a topic or concept the user did not actually mention.
 
         Args:
             topic: The main subject studied, as stated by the user.
-            learned: What was learned, described in the user's own words.
-            related_concepts: Specific terms or concepts the user explicitly named.
-                Leave empty if none were mentioned — do not add concepts on your own.
+            learned: The user's own explanations collected during the retrieval conversation,
+                concatenated verbatim — including explicit notes on what the user could not yet
+                explain. Do not summarize, rewrite, or complete them before passing.
+            related_concepts: Specific terms or concepts the user explicitly named or explained,
+                as a list of strings. Leave empty if none were mentioned — do not add concepts
+                on your own.
         """
+        if isinstance(related_concepts, str):
+            related_concepts = [c.strip() for c in related_concepts.split(",") if c.strip()]
         return write_daily_note(topic, learned, related_concepts)
 
     @tool(parse_docstring=True)
@@ -78,7 +83,7 @@ def make_tools():
             what: A brief account of the situation or work, as described by the user.
             learned: The core takeaway from the session.
             troubleshooting: The problem encountered and how it was resolved. Empty string if none mentioned.
-            reflection: The user's reflection, expanded into full sentences if it was terse.
+            reflection: The user's reflection, as stated. Do not expand it beyond light polishing.
             actionplan: The next action, as stated by the user. Empty string if none mentioned.
             keywords: Short keywords, only from terms the user actually used.
         """
