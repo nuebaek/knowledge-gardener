@@ -13,11 +13,11 @@ from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
 )
 
-from app.core.paths import CHROMA_DIR, PROCESSED_DIR
+from app.core import catalog
+from app.core.paths import CHROMA_DIR, PROJECT_ROOT
 
 load_dotenv()
 
-DATA_DIR = PROCESSED_DIR
 CHROMA_COLLECTION = "cs231n"
 TOP_K = 5
 RELEVANCE_THRESHOLD = 0.4
@@ -49,23 +49,41 @@ def build_chroma_client():
     return chromadb.PersistentClient(path=str(CHROMA_DIR))
 
 
-def load_split_docs():
-    # 1단계: 헤더 기준 분할로 섹션 단위 의미 보존
+def _make_splitters():
+    # 1단계: 헤더 기준 분할로 섹션 단위 의미 보존. 2단계: 긴 섹션만 길이 기준으로 추가 분할.
     header_splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
         strip_headers=False,
     )
-    # 2단계: 긴 섹션만 길이 기준으로 추가 분할
     char_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+    return header_splitter, char_splitter
+
+
+def _split_path(path, header_splitter, char_splitter) -> list:
+    # source를 절대경로가 아니라 catalog의 source_path(PROJECT_ROOT 기준 상대경로)로 맞춰야
+    # sync_index()의 delete(where={"source": ...})가 같은 문서의 기존 청크를 정확히 찾는다.
+    source = path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+    sections = header_splitter.split_text(path.read_text(encoding="utf-8"))
+    for sec in sections:
+        sec.metadata["source"] = source
+    chunks = char_splitter.split_documents(sections)
+    for chunk in chunks:
+        inject_header_context(chunk)
+    return chunks
+
+
+def load_split_docs(rows=None):
+    """rows를 안 주면 카탈로그 전체(초기 구축용), 주면 그 문서들만(증분용) 청킹한다.
+
+    예전엔 data/processed만 훑었어서 writer가 쓴 daily/weekly/til은 답변 생성에서 아예
+    검색이 안 됐다 — catalog가 단일 소스가 된 지금은 doc_type을 안 가리고 다 포함시킨다.
+    """
+    header_splitter, char_splitter = _make_splitters()
+    if rows is None:
+        rows = catalog.list_documents()
     split_docs = []
-    for path in sorted(DATA_DIR.glob("**/*.md")):
-        sections = header_splitter.split_text(path.read_text(encoding="utf-8"))
-        for sec in sections:
-            sec.metadata["source"] = str(path)
-        chunks = char_splitter.split_documents(sections)
-        for chunk in chunks:
-            inject_header_context(chunk)
-        split_docs.extend(chunks)
+    for row in rows:
+        split_docs.extend(_split_path(PROJECT_ROOT / row["source_path"], header_splitter, char_splitter))
     return split_docs
 
 
@@ -78,23 +96,41 @@ def inject_header_context(doc) -> None:
         doc.page_content = f"{prefix}\n\n{doc.page_content}"
 
 
+def sync_index(vectorstore) -> int:
+    """catalog에서 indexed_at IS NULL인(새로 생기거나 내용이 바뀐) 문서만 재청킹해서
+    그 문서의 기존 청크만 지우고 새로 넣는다 — 컬렉션 전체를 다시 만들 필요가 없다."""
+    header_splitter, char_splitter = _make_splitters()
+    pending = catalog.pending_reindex()
+    for row in pending:
+        path = PROJECT_ROOT / row["source_path"]
+        if not path.exists():
+            continue  # 파일이 지워진 케이스는 스코프 아웃
+        vectorstore.delete(where={"source": row["source_path"]})
+        chunks = _split_path(path, header_splitter, char_splitter)
+        if chunks:
+            vectorstore.add_documents(chunks)
+        catalog.mark_indexed(row["source_path"])
+    return len(pending)
+
+
 def get_vectorstore(embeddings):
     client = build_chroma_client()
     existing = {c.name for c in client.list_collections()}
+    if CHROMA_COLLECTION in existing and client.get_collection(CHROMA_COLLECTION).count() > 0:
+        vectorstore = Chroma(client=client, collection_name=CHROMA_COLLECTION, embedding_function=embeddings)
+        sync_index(vectorstore)
+        return vectorstore
+
     if CHROMA_COLLECTION in existing:
-        if client.get_collection(CHROMA_COLLECTION).count() > 0:
-            return Chroma(
-                client=client,
-                collection_name=CHROMA_COLLECTION,
-                embedding_function=embeddings,
-            )
         client.delete_collection(CHROMA_COLLECTION)
-    return Chroma.from_documents(
-        load_split_docs(),
-        embeddings,
-        client=client,
-        collection_name=CHROMA_COLLECTION,
+
+    rows = catalog.list_documents()
+    vectorstore = Chroma.from_documents(
+        load_split_docs(rows), embeddings, client=client, collection_name=CHROMA_COLLECTION,
     )
+    for row in rows:
+        catalog.mark_indexed(row["source_path"])
+    return vectorstore
 
 
 def get_retriever(embeddings, k: int = TOP_K):
