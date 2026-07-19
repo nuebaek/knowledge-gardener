@@ -1,6 +1,10 @@
 import os
 import re
+import sys
 from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
@@ -8,7 +12,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langsmith import Client
 from langsmith.evaluation import evaluate
 
-from rag import TOP_K, build_rag_chain
+from app.rag.chain import TOP_K, build_rag_chain
 
 # 서빙과 동일한 체인 (인덱싱은 build_rag_chain 내부에서 1회 수행)
 rag = build_rag_chain()

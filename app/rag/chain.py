@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 import chromadb
 from dotenv import load_dotenv
@@ -14,10 +13,11 @@ from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
 )
 
+from app.core.paths import CHROMA_DIR, PROCESSED_DIR
+
 load_dotenv()
 
-BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data" / "processed"
+DATA_DIR = PROCESSED_DIR
 CHROMA_COLLECTION = "cs231n"
 TOP_K = 5
 RELEVANCE_THRESHOLD = 0.4
@@ -46,7 +46,7 @@ def build_chroma_client():
             host=os.getenv("CHROMA_HOST", "localhost"),
             port=int(os.getenv("CHROMA_PORT", "8000")),
         )
-    return chromadb.PersistentClient(path=str(BASE_DIR / "chroma_data"))
+    return chromadb.PersistentClient(path=str(CHROMA_DIR))
 
 
 def load_split_docs():

@@ -1,6 +1,6 @@
 from langchain_core.tools import tool
-from graph import build_rag_graph
-from writer import write_daily_note, write_weekly_note, write_tilnote
+from app.rag.graph import build_rag_graph
+from app.writer.writer import write_daily_note, write_weekly_note, write_tilnote
 
 def make_tools():
     qa_graph = build_rag_graph()

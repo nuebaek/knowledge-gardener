@@ -1,7 +1,7 @@
 from langgraph.graph import MessagesState
 from langchain_core.messages import SystemMessage
-from rag import _extract_sources, TOP_K, RELEVANCE_THRESHOLD
-from state import GraphState
+from app.rag.chain import _extract_sources, TOP_K, RELEVANCE_THRESHOLD
+from app.rag.state import GraphState
 
 
 def make_agent_node(llm, tools, system_prompt):
