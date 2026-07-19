@@ -9,3 +9,4 @@ WRITER_DIR = DATA_DIR / "writer"
 
 CHROMA_DIR = PROJECT_ROOT / "chroma_data"
 STATIC_DIR = PROJECT_ROOT / "static"
+LIBRARY_DB = DATA_DIR / "library.db"

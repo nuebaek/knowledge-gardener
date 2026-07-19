@@ -7,13 +7,22 @@
 실행:
     uv run python scripts/preprocess.py (kaia-project 루트에서)
 """
+import sys
 from pathlib import Path
 
 from markitdown import MarkItDown
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))  # scripts/는 app 패키지 바깥이라 루트를 직접 넣어줘야 import된다
+from app.core import catalog
+
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 OUT_DIR = PROJECT_ROOT / "data" / "processed"
+
+
+def _title(stem: str) -> str:
+    words = stem.replace("_", "-").split("-")
+    return " ".join(w if w.isdigit() else w.capitalize() for w in words)
 
 
 def main() -> None:
@@ -35,6 +44,7 @@ def main() -> None:
         try:
             result = md.convert(str(src))
             out.write_text(result.text_content, encoding="utf-8")
+            catalog.upsert_document(out, source_type="ingest", doc_type="processed", title=_title(out.stem))
             print(f"  ✓ {rel} → {out.relative_to(OUT_DIR)}")
             ok += 1
         except Exception as e:
