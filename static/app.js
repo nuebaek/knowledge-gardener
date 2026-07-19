@@ -140,8 +140,14 @@ const docReaderEmpty = document.getElementById("doc-reader-empty");
 const docReaderBody = document.getElementById("doc-reader-body");
 const docReaderScroll = document.getElementById("doc-reader");
 const docCountTag = document.getElementById("doc-count-tag");
+const docFolderTabs = document.getElementById("doc-folder-tabs");
+
+// doc_type은 저장 경로(data/writer/dailynote 등)에서 그대로 온 값 — 화면 표시용 한글 라벨만 매핑
+const DOC_TYPE_LABELS = { dailynote: "데일리노트", weeklynote: "위클리노트", til: "TIL", processed: "강의자료" };
 
 let documentsPromise = null;
+let allDocuments = []; // 폴더 탭을 서버 왕복 없이 즉시 전환하려고 전체를 한 번만 받아 클라이언트에서 필터링
+let activeDocType = null; // null = 전체
 
 // shaped like the doc-card it's about to become, not a spinner — so the list doesn't
 // visually jump when the real cards land
@@ -167,8 +173,9 @@ function ensureDocumentsLoaded() {
       return res.json();
     })
     .then((docs) => {
-      renderDocList(docs);
-      docCountTag.textContent = `${docs.length}개 문서`;
+      allDocuments = docs;
+      renderFolderTabs();
+      applyDocTypeFilter();
       return docs;
     })
     .catch((err) => {
@@ -179,8 +186,38 @@ function ensureDocumentsLoaded() {
   return documentsPromise;
 }
 
+function renderFolderTabs() {
+  const types = [...new Set(allDocuments.map((d) => d.doc_type))];
+  docFolderTabs.innerHTML = "";
+  const makeTab = (value, label) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "folder-tab";
+    btn.textContent = label;
+    btn.setAttribute("aria-selected", String(activeDocType === value));
+    btn.addEventListener("click", () => {
+      activeDocType = value;
+      renderFolderTabs();
+      applyDocTypeFilter();
+    });
+    docFolderTabs.appendChild(btn);
+  };
+  makeTab(null, "전체");
+  types.forEach((t) => makeTab(t, DOC_TYPE_LABELS[t] || t));
+}
+
+function applyDocTypeFilter() {
+  const filtered = activeDocType ? allDocuments.filter((d) => d.doc_type === activeDocType) : allDocuments;
+  renderDocList(filtered);
+  docCountTag.textContent = `${filtered.length}개 문서`;
+}
+
 function renderDocList(docs) {
   docListEl.innerHTML = "";
+  if (docs.length === 0) {
+    docListEl.innerHTML = `<p class="doc-list-status">이 폴더에는 문서가 없습니다.</p>`;
+    return;
+  }
   docs.forEach((doc) => {
     const card = document.createElement("button");
     card.type = "button";
@@ -191,12 +228,52 @@ function renderDocList(docs) {
       <p class="doc-card-title"></p>
       <p class="doc-card-excerpt"></p>
       <p class="doc-card-meta"></p>
+      <div class="doc-card-tags"></div>
     `;
     card.querySelector(".doc-card-title").textContent = doc.title;
     card.querySelector(".doc-card-excerpt").textContent = doc.excerpt;
     card.querySelector(".doc-card-meta").textContent = `${doc.char_count.toLocaleString()}자`;
+    const tagsEl = card.querySelector(".doc-card-tags");
+    doc.tags.forEach((tag) => {
+      const chip = document.createElement("span");
+      chip.className = "tag-chip";
+      chip.textContent = tag;
+      tagsEl.appendChild(chip);
+    });
     card.addEventListener("click", () => openDocument(doc.id));
     docListEl.appendChild(card);
+  });
+}
+
+// 문서를 읽는 그 자리에서 바로 태그를 붙이고 뗄 수 있게 — 목록으로 안 돌아가도 됨.
+// allDocuments는 세션당 한 번만 받아온 캐시라, 여기서 바꾼 태그를 그 캐시에도 반영해줘야
+// 목록으로 돌아갔을 때 카드의 태그 칩이 방금 편집한 내용과 어긋나지 않는다.
+function syncDocTagsCache(docId, tags) {
+  const cached = allDocuments.find((d) => d.id === docId);
+  if (cached) cached.tags = tags;
+  applyDocTypeFilter(); // 카드 태그 칩을 최신 상태로 다시 그리는데, 이때 현재 열려있는 카드의 강조가 풀림
+  markActiveDocCard(docId); // 그래서 바로 다시 표시해줌
+}
+
+function renderReaderTags(docId, tags) {
+  const listEl = docReaderBody.querySelector("#reader-tag-list");
+  listEl.innerHTML = "";
+  tags.forEach((tag) => {
+    const chip = document.createElement("span");
+    chip.className = "tag-chip tag-chip--removable";
+    chip.innerHTML = `<span></span><button type="button" aria-label="${tag} 태그 삭제">×</button>`;
+    chip.querySelector("span").textContent = tag;
+    chip.querySelector("button").addEventListener("click", async () => {
+      const res = await fetch(`/documents/${encodeURIComponent(docId)}/tags/${encodeURIComponent(tag)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        renderReaderTags(docId, updated);
+        syncDocTagsCache(docId, updated);
+      }
+    });
+    listEl.appendChild(chip);
   });
 }
 
@@ -233,12 +310,37 @@ async function openDocument(docId) {
         <h2 class="doc-reader-title"></h2>
         <p class="doc-reader-file"></p>
       </header>
+      <div class="doc-reader-tags">
+        <div class="tag-chip-list" id="reader-tag-list"></div>
+        <form class="tag-add-form" id="tag-add-form">
+          <input type="text" id="tag-add-input" placeholder="태그 추가" maxlength="30" autocomplete="off" />
+          <button type="submit">추가</button>
+        </form>
+      </div>
       <div class="agent-text doc-reader-content"></div>
     `;
     docReaderBody.querySelector(".doc-reader-title").textContent = doc.title;
     docReaderBody.querySelector(".doc-reader-file").textContent =
-      `${doc.id}.md · ${doc.char_count.toLocaleString()}자`;
+      `${doc.id} · ${doc.char_count.toLocaleString()}자`;
     renderMarkdownInto(docReaderBody.querySelector(".doc-reader-content"), doc.content);
+    renderReaderTags(doc.id, doc.tags);
+    docReaderBody.querySelector("#tag-add-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = docReaderBody.querySelector("#tag-add-input");
+      const name = input.value.trim();
+      if (!name) return;
+      const res = await fetch(`/documents/${encodeURIComponent(doc.id)}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (res.ok) {
+        input.value = "";
+        const updated = await res.json();
+        renderReaderTags(doc.id, updated);
+        syncDocTagsCache(doc.id, updated);
+      }
+    });
     docReaderScroll.scrollTop = 0;
   } catch (err) {
     docReaderBody.innerHTML = `<p class="doc-reader-status status-error">문서를 불러오지 못했습니다.</p>`;
