@@ -5,8 +5,9 @@ import yaml
 from langchain_core.prompts import ChatPromptTemplate
 
 from pathlib import Path
-from rag import build_llm
-from model import DailynoteEntry, WeeklynoteEntry, TilEntry
+from app.core.paths import WRITER_DIR
+from app.rag.chain import build_llm
+from app.writer.model import DailynoteEntry, WeeklynoteEntry, TilEntry
 
 # ---------------- 프롬프트 ----------------
 
@@ -81,7 +82,7 @@ TIL_PROMPT = ChatPromptTemplate.from_messages([
 # ---------------- writer 정의 ----------------
 llm = build_llm()
 
-BASE_DIR = Path(__file__).parent / "data" / "writer"
+BASE_DIR = WRITER_DIR
 today = _date.today()
 
 def slugify(text: str, max_len: int = 20) -> str:

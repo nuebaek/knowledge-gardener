@@ -1,7 +1,7 @@
 """RAG 컨트롤러 — 체인 호출과 응답 변환을 담당."""
 from fastapi import HTTPException
 from pathlib import Path
-from schemas import AskResponse, ConverseResponse, SavedDocument, ThreadHistoryResponse, ThreadMessage
+from app.schemas.rag import AskResponse, ConverseResponse, SavedDocument, ThreadHistoryResponse, ThreadMessage
 from langchain.messages import AIMessage, ToolMessage
 
 

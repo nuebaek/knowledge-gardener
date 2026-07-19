@@ -3,9 +3,8 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from schemas import CorpusResponse, DocumentDetail, DocumentSummary, SearchHit, SearchResponse
-
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "processed"
+from app.core.paths import PROCESSED_DIR as DATA_DIR
+from app.schemas.corpus import CorpusResponse, DocumentDetail, DocumentSummary, SearchHit, SearchResponse
 
 _MARKUP = re.compile(r"[*_`#]")
 _HEADING = re.compile(r"^#{1,6}\s+(.*)")
