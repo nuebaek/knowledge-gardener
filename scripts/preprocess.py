@@ -5,14 +5,15 @@
 디렉터리 구조는 raw → processed 로 그대로 유지한다.
 
 실행:
-    uv run python preprocess.py
+    uv run python scripts/preprocess.py (kaia-project 루트에서)
 """
 from pathlib import Path
 
 from markitdown import MarkItDown
 
-RAW_DIR = Path(__file__).parent / "data" / "raw"
-OUT_DIR = Path(__file__).parent / "data" / "processed"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+RAW_DIR = PROJECT_ROOT / "data" / "raw"
+OUT_DIR = PROJECT_ROOT / "data" / "processed"
 
 
 def main() -> None:
