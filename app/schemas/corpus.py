@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CorpusResponse(BaseModel):
@@ -11,6 +11,8 @@ class DocumentSummary(BaseModel):
     title: str
     excerpt: str
     char_count: int
+    doc_type: str
+    tags: list[str] = []
 
 
 class DocumentDetail(BaseModel):
@@ -18,6 +20,12 @@ class DocumentDetail(BaseModel):
     title: str
     content: str
     char_count: int
+    doc_type: str
+    tags: list[str] = []
+
+
+class TagRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=30)
 
 
 class SearchHit(BaseModel):

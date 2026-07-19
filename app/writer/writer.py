@@ -5,6 +5,7 @@ import yaml
 from langchain_core.prompts import ChatPromptTemplate
 
 from pathlib import Path
+from app.core import catalog
 from app.core.paths import WRITER_DIR
 from app.rag.chain import build_llm
 from app.writer.model import DailynoteEntry, WeeklynoteEntry, TilEntry
@@ -166,7 +167,7 @@ def _read_frontmatter(path: Path) -> dict:
     return yaml.safe_load(frontmatter)
 
 
-def save_docs(dir, filename, entry, body, overwrite: bool = False) -> Path:
+def save_docs(dir, filename, entry, body, title, overwrite: bool = False) -> Path:
     frontmatter = yaml.safe_dump(entry.model_dump(mode="json"), allow_unicode=True)
     content = f"---\n{frontmatter}---\n\n{body}\n"
 
@@ -179,6 +180,8 @@ def save_docs(dir, filename, entry, body, overwrite: bool = False) -> Path:
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(content, encoding="utf-8")
+    # 저장 시점에 바로 카탈로그에 반영 → 문서함 화면이 다음 새로고침부터 이 문서를 바로 보여줌
+    catalog.upsert_document(out_path, source_type="writer", doc_type=dir, title=title)
     return out_path
 
 
@@ -204,7 +207,7 @@ def write_daily_note(
     response = llm.invoke(messages)
 
     slug = slugify(topic)
-    out_path = save_docs("dailynote", f"{today}-{slug}", entry, response.content)
+    out_path = save_docs("dailynote", f"{today}-{slug}", entry, response.content, title=topic)
     return f"저장 완료: {out_path}"
 
 
@@ -251,7 +254,8 @@ def write_weekly_note(as_of: str | None = None) -> str:
 
     response = llm.invoke(messages)
 
-    out_path = save_docs("weeklynote", monday.isoformat(), entry, response.content, overwrite=True)
+    title = f"{monday.isoformat()} ~ {sunday.isoformat()} 주간노트"
+    out_path = save_docs("weeklynote", monday.isoformat(), entry, response.content, title=title, overwrite=True)
     return f"저장 완료: {out_path}"
 
 
@@ -286,5 +290,6 @@ def write_tilnote(
     response = llm.invoke(messages)
 
     slug = slugify(what)
-    out_path = save_docs("til", f"{today}-{slug}", entry, response.content)
+    title = what if len(what) <= 60 else f"{what[:60]}…"
+    out_path = save_docs("til", f"{today}-{slug}", entry, response.content, title=title)
     return f"저장 완료: {out_path}"

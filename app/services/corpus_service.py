@@ -3,8 +3,12 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from app.core.paths import PROCESSED_DIR as DATA_DIR
+from app.core import catalog
+from app.core.paths import PROCESSED_DIR, PROJECT_ROOT, WRITER_DIR
 from app.schemas.corpus import CorpusResponse, DocumentDetail, DocumentSummary, SearchHit, SearchResponse
+
+# 카탈로그에 없는 임의 경로(예: ../../.env)가 넘어와도 이 두 트리 밖은 절대 못 읽도록 고정.
+ALLOWED_ROOTS = [PROCESSED_DIR.resolve(), WRITER_DIR.resolve()]
 
 _MARKUP = re.compile(r"[*_`#]")
 _HEADING = re.compile(r"^#{1,6}\s+(.*)")
@@ -13,21 +17,8 @@ _LIST_ITEM = re.compile(r"^[*+-]\s")
 _LINK_ONLY = re.compile(r"^\[[^\]]+\]\([^)]*\)\s*$")
 
 
-def _humanize(stem: str) -> str:
-    words = stem.replace("_", "-").split("-")
-    return " ".join(w if w.isdigit() else w.capitalize() for w in words)
-
-
-def _paths() -> list[Path]:
-    return sorted(DATA_DIR.glob("*.md"))
-
-
 def _excerpt(text: str, limit: int = 140) -> str:
-    """헤더/TOC 라벨/링크/불릿 줄을 모두 건너뛰고 진짜 본문 문단만 뽑아 목록 카드에 쓴다.
-
-    CS231n 원문 대부분이 헤더 바로 다음 줄에 "Table of Contents:" + 중첩 링크 불릿을
-    두고 있어, 이 블록 전체를 지나쳐야 실제 소개 문단에 닿는다.
-    """
+    """헤더/TOC 라벨/링크/불릿 줄을 모두 건너뛰고 진짜 본문 문단만 뽑아 목록 카드에 쓴다."""
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
@@ -44,37 +35,62 @@ def _excerpt(text: str, limit: int = 140) -> str:
 
 
 def _resolve(doc_id: str) -> Path:
-    path = (DATA_DIR / f"{doc_id}.md").resolve()
-    if DATA_DIR.resolve() not in path.parents or not path.exists():
+    path = (PROJECT_ROOT / doc_id).resolve()
+    if not any(root == path or root in path.parents for root in ALLOWED_ROOTS) or not path.exists():
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
     return path
 
 
+def _to_summary(row) -> DocumentSummary:
+    text = (PROJECT_ROOT / row["source_path"]).read_text(encoding="utf-8")
+    return DocumentSummary(
+        id=row["source_path"],
+        title=row["title"],
+        excerpt=_excerpt(text),
+        char_count=row["char_count"],
+        doc_type=row["doc_type"],
+        tags=row["tags"].split(",") if row["tags"] else [],
+    )
+
+
 def get_corpus() -> CorpusResponse:
-    paths = _paths()
-    topics = [_humanize(p.stem) for p in paths]
-    return CorpusResponse(count=len(paths), topics=topics)
+    rows = catalog.list_documents(doc_type="processed")
+    return CorpusResponse(count=len(rows), topics=[r["title"] for r in rows])
 
 
-def list_documents() -> list[DocumentSummary]:
-    summaries = []
-    for path in _paths():
-        text = path.read_text(encoding="utf-8")
-        summaries.append(
-            DocumentSummary(
-                id=path.stem,
-                title=_humanize(path.stem),
-                excerpt=_excerpt(text),
-                char_count=len(text),
-            )
-        )
-    return summaries
+def list_documents(doc_type: str | None = None, tag: str | None = None) -> list[DocumentSummary]:
+    return [_to_summary(row) for row in catalog.list_documents(doc_type=doc_type, tag=tag)]
 
 
 def get_document(doc_id: str) -> DocumentDetail:
-    path = _resolve(doc_id)
-    text = path.read_text(encoding="utf-8")
-    return DocumentDetail(id=doc_id, title=_humanize(doc_id), content=text, char_count=len(text))
+    row = catalog.get_document(doc_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    text = _resolve(doc_id).read_text(encoding="utf-8")
+    return DocumentDetail(
+        id=doc_id,
+        title=row["title"],
+        content=text,
+        char_count=row["char_count"],
+        doc_type=row["doc_type"],
+        tags=catalog.list_tags(doc_id),
+    )
+
+
+def add_tag(doc_id: str, name: str) -> list[str]:
+    if catalog.get_document(doc_id) is None:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    return catalog.add_tag(doc_id, name.strip())
+
+
+def remove_tag(doc_id: str, name: str) -> list[str]:
+    if catalog.get_document(doc_id) is None:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    return catalog.remove_tag(doc_id, name)
+
+
+def list_tags() -> list[str]:
+    return catalog.all_tags()
 
 
 def search_documents(query: str, limit: int = 20) -> SearchResponse:
@@ -85,11 +101,11 @@ def search_documents(query: str, limit: int = 20) -> SearchResponse:
     q_lower = q.lower()
 
     hits: list[SearchHit] = []
-    for path in _paths():
+    for row in catalog.list_documents():
         if len(hits) >= limit:
             break
-        text = path.read_text(encoding="utf-8")
-        title = _humanize(path.stem)
+        text = (PROJECT_ROOT / row["source_path"]).read_text(encoding="utf-8")
+        title = row["title"]
         current_section = title
 
         for block in text.split("\n\n"):
@@ -119,7 +135,7 @@ def search_documents(query: str, limit: int = 20) -> SearchResponse:
 
             hits.append(
                 SearchHit(
-                    doc_id=path.stem,
+                    doc_id=row["source_path"],
                     title=title,
                     section=current_section,
                     snippet=f"{prefix}{snippet}{'…' if window_end < len(clean) else ''}",
