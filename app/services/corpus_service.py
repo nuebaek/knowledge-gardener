@@ -13,8 +13,19 @@ ALLOWED_ROOTS = [PROCESSED_DIR.resolve(), WRITER_DIR.resolve()]
 _MARKUP = re.compile(r"[*_`#]")
 _HEADING = re.compile(r"^#{1,6}\s+(.*)")
 _TOC_LABEL = re.compile(r"^(table of contents|목차)\s*:?\s*$", re.IGNORECASE)
-_LIST_ITEM = re.compile(r"^[*+-]\s")
+_LIST_ITEM = re.compile(r"^(?:[*+-]|\d+(?:\.\d+)*\.?)\s")
 _LINK_ONLY = re.compile(r"^\[[^\]]+\]\([^)]*\)\s*$")
+_HR = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
+
+
+def _strip_frontmatter(text: str) -> str:
+    """writer가 저장하는 문서는 전부 YAML frontmatter(`---`로 감싼 블록)로 시작한다 —
+    title/tags/doc_type은 이미 별도 필드로 카탈로그에 있으니 사용자 화면(본문/미리보기)엔
+    이 블록을 보여줄 이유가 없다. `---`로 시작하지 않는 문서(ingest 변환본 등)는 그대로 둔다."""
+    if not text.startswith("---"):
+        return text
+    parts = text.split("---", 2)
+    return parts[2].lstrip("\n") if len(parts) == 3 else text
 
 
 def _excerpt(text: str, limit: int = 140) -> str:
@@ -25,7 +36,7 @@ def _excerpt(text: str, limit: int = 140) -> str:
             continue
         if stripped.startswith("#") or stripped.startswith("!["):
             continue
-        if _TOC_LABEL.match(stripped) or _LIST_ITEM.match(stripped) or _LINK_ONLY.match(stripped):
+        if _TOC_LABEL.match(stripped) or _LIST_ITEM.match(stripped) or _LINK_ONLY.match(stripped) or _HR.match(stripped):
             continue
         clean = _MARKUP.sub("", stripped).strip()
         if not clean:
@@ -41,13 +52,17 @@ def _resolve(doc_id: str) -> Path:
     return path
 
 
-def _to_summary(row) -> DocumentSummary:
-    text = (PROJECT_ROOT / row["source_path"]).read_text(encoding="utf-8")
+def _to_summary(row) -> DocumentSummary | None:
+    path = PROJECT_ROOT / row["source_path"]
+    if not path.exists():
+        return None  # 카탈로그엔 있는데 파일이 직접 지워진 경우 — 목록에서 조용히 빠짐
+    text = _strip_frontmatter(path.read_text(encoding="utf-8"))
     return DocumentSummary(
         id=row["source_path"],
         title=row["title"],
         excerpt=_excerpt(text),
         char_count=row["char_count"],
+        created_at=row["created_at"],
         doc_type=row["doc_type"],
         tags=row["tags"].split(",") if row["tags"] else [],
     )
@@ -59,19 +74,21 @@ def get_corpus() -> CorpusResponse:
 
 
 def list_documents(doc_type: str | None = None, tag: str | None = None) -> list[DocumentSummary]:
-    return [_to_summary(row) for row in catalog.list_documents(doc_type=doc_type, tag=tag)]
+    summaries = (_to_summary(row) for row in catalog.list_documents(doc_type=doc_type, tag=tag))
+    return [s for s in summaries if s is not None]
 
 
 def get_document(doc_id: str) -> DocumentDetail:
     row = catalog.get_document(doc_id)
     if row is None:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
-    text = _resolve(doc_id).read_text(encoding="utf-8")
+    text = _strip_frontmatter(_resolve(doc_id).read_text(encoding="utf-8"))
     return DocumentDetail(
         id=doc_id,
         title=row["title"],
         content=text,
         char_count=row["char_count"],
+        created_at=row["created_at"],
         doc_type=row["doc_type"],
         tags=catalog.list_tags(doc_id),
     )
@@ -104,7 +121,10 @@ def search_documents(query: str, limit: int = 20) -> SearchResponse:
     for row in catalog.list_documents():
         if len(hits) >= limit:
             break
-        text = (PROJECT_ROOT / row["source_path"]).read_text(encoding="utf-8")
+        path = PROJECT_ROOT / row["source_path"]
+        if not path.exists():
+            continue  # 카탈로그엔 있는데 파일이 직접 지워진 경우
+        text = _strip_frontmatter(path.read_text(encoding="utf-8"))
         title = row["title"]
         current_section = title
 

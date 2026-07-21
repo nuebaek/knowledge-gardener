@@ -11,6 +11,7 @@ class DocumentSummary(BaseModel):
     title: str
     excerpt: str
     char_count: int
+    created_at: str
     doc_type: str
     tags: list[str] = []
 
@@ -20,6 +21,7 @@ class DocumentDetail(BaseModel):
     title: str
     content: str
     char_count: int
+    created_at: str
     doc_type: str
     tags: list[str] = []
 

@@ -25,6 +25,7 @@
       <div class="rail-mark" aria-hidden="true"><span class="rail-mark-dot"></span></div>
 
       <div class="rail-tabs" role="tablist" aria-label="패널" aria-orientation="vertical">
+        <span class="rail-indicator" id="rail-indicator" aria-hidden="true"></span>
         <button type="button" class="rail-tab" id="tab-chat" role="tab" aria-selected="true" tabindex="0"
           aria-controls="panel-chat" data-panel="chat">
           <svg class="rail-tab-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -110,7 +111,12 @@
         <div class="panel-head-meta" id="doc-count-tag"></div>
       </header>
 
-      <div class="doc-folder-tabs" id="doc-folder-tabs" role="tablist" aria-label="문서 폴더"></div>
+      <div class="doc-filter-row">
+        <div class="doc-folder-tabs" id="doc-folder-tabs" role="tablist" aria-label="문서 폴더"></div>
+        <button type="button" class="tag-filter-pill" id="tag-filter-pill" hidden>
+          <span id="tag-filter-label"></span><span class="tag-filter-clear" aria-hidden="true">×</span>
+        </button>
+      </div>
 
       <div class="doc-layout">
         <div class="doc-list" id="doc-list" aria-label="문서 목록"></div>
