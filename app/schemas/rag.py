@@ -24,6 +24,7 @@ class ConverseResponse(BaseModel):
     answer: str
     tools_used: list[str]
     saved_documents: list[SavedDocument] = []
+    mindmap_plaintext: str | None = None
 
 
 class ThreadMessage(BaseModel):

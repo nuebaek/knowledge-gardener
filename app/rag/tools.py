@@ -1,6 +1,10 @@
 from langchain_core.tools import tool
 from app.rag.graph import build_rag_graph
 from app.writer.writer import write_daily_note, write_weekly_note, write_tilnote
+from app.visualizer.visualizer import visualize_mindmap_img
+
+from app.core import catalog
+from datetime import date
 
 def make_tools():
     qa_graph = build_rag_graph()
@@ -68,7 +72,7 @@ def make_tools():
         troubleshooting: str,
         reflection: str,
         actionplan: str,
-        keywords: list[str],
+        keywords: list[str] | str | None = None,
     ) -> str:
         """Write and save a TIL-style (Today I Learned) retrospective note.
 
@@ -85,8 +89,40 @@ def make_tools():
             troubleshooting: The problem encountered and how it was resolved. Empty string if none mentioned.
             reflection: The user's reflection, as stated. Do not expand it beyond light polishing.
             actionplan: The next action, as stated by the user. Empty string if none mentioned.
-            keywords: Short keywords, only from terms the user actually used.
+            keywords: Short keywords, only from terms the user actually used, as a list of strings.
         """
-        return write_tilnote(what, learned, troubleshooting, reflection, actionplan, keywords)
+        if isinstance(keywords, str):
+            keywords = [c.strip() for c in keywords.split(",") if c.strip()]
+        return write_tilnote(what, learned, troubleshooting, reflection, actionplan, keywords or [])
 
-    return [answer_question, write_daily, write_weekly, write_til]
+    @tool(parse_docstring=True)
+    def visualize_mindmap(query: str | None = None) -> str:
+        """Generate a mindmap recap of the user's study notes and return its plaintext for display.
+
+        Use this when the user wants a visual recap/mindmap of what they've studied — e.g.
+        "오늘 배운 거 마인드맵으로 보여줘", "week-02 마인드맵으로 정리해줘", "Docker 관련 내용 마인드맵으로".
+        Do NOT use this to answer a question or explain a concept — use `answer_question` for that.
+
+        Args:
+            query: What to visualize, in the user's own words — a filename fragment (e.g. "week-02")
+                or a topic keyword. Leave this empty when the user just says "오늘"/"today" with no
+                specific document named — it then defaults to today's daily notes.
+        """
+        documents = []
+        if isinstance(query, str) and query.strip():
+        # 파일명/제목에 query가 들어간 문서를 doc_type 무관하게 찾는다            
+            rows = catalog.list_documents()
+            for row in rows:
+                if query.lower() in row["source_path"].lower() or query.lower() in row["title"].lower():
+                    documents.append(row["source_path"])
+        else:
+            # query 없으면 "오늘" — dailynote/til 중 오늘 created_at인 것만
+            today = date.today().isoformat()
+            for dt in ("dailynote", "til"):
+                for row in catalog.list_documents(doc_type=dt):
+                    if row["created_at"].startswith(today):
+                        documents.append(row["source_path"])
+
+        return visualize_mindmap_img(documents)
+
+    return [answer_question, write_daily, write_weekly, write_til, visualize_mindmap]
