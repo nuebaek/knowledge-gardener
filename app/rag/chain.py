@@ -83,7 +83,10 @@ def load_split_docs(rows=None):
         rows = catalog.list_documents()
     split_docs = []
     for row in rows:
-        split_docs.extend(_split_path(PROJECT_ROOT / row["source_path"], header_splitter, char_splitter))
+        path = PROJECT_ROOT / row["source_path"]
+        if not path.exists():
+            continue  # 카탈로그엔 있는데 파일이 지워진 경우 — sync_index()와 같은 가드
+        split_docs.extend(_split_path(path, header_splitter, char_splitter))
     return split_docs
 
 

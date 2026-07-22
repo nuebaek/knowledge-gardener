@@ -14,10 +14,13 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 
-from app.core.paths import LIBRARY_DB, PROJECT_ROOT
+import yaml
+
+from app.core.paths import LIBRARY_DB, PROCESSED_DIR, PROJECT_ROOT, WRITER_DIR
 
 BASE_DIR = PROJECT_ROOT
 DB_PATH = LIBRARY_DB
+_WRITER_TITLE_KEY = {"dailynote": "topic", "til": "what"}  # weeklynote는 별도 처리
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
@@ -153,6 +156,16 @@ def get_document(source_path: str) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def prune_missing() -> list[str]:
+    """파일을 앱 밖에서(파인더/터미널 등) 직접 지우면 카탈로그 row만 고아로 남는다.
+    load_split_docs/list_documents 등은 그런 row를 만나도 안 죽게 방어해뒀지만, 방어만으론
+    카탈로그가 계속 더러워지니 이걸로 실제로 정리한다. 지운 source_path 목록을 반환."""
+    stale = [row["source_path"] for row in list_documents() if not (BASE_DIR / row["source_path"]).exists()]
+    for source_path in stale:
+        delete_document(source_path)
+    return stale
+
+
 def delete_document(source_path: str) -> None:
     """파일을 직접 지운 뒤 카탈로그 row가 남아있으면 list_documents()가 그 파일을 읽으려다
     죽는다 — 파일을 지울 땐 항상 이것도 같이 불러야 한다. document_tags는 FK ON DELETE
@@ -203,3 +216,57 @@ def remove_tag(source_path: str, name: str) -> list[str]:
             (name,),
         )
     return list_tags(source_path)
+
+
+def _fallback_title(path: Path) -> str:
+    """프론트매터가 없거나 깨진 파일(앱이 아니라 사람이 직접 data/ 밑에 붙여넣은 파일)의
+    제목을 첫 줄에서 뽑는다 — 파일명보다 훨씬 의미 있는 제목이 나온다."""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip().lstrip("#").strip()
+        if stripped:
+            return stripped if len(stripped) <= 60 else f"{stripped[:60]}…"
+    return path.stem
+
+
+def _writer_title(path: Path, doc_type: str) -> str:
+    try:
+        raw = path.read_text(encoding="utf-8")
+        _, frontmatter, _ = raw.split("---", 2)
+        meta = yaml.safe_load(frontmatter)
+        if not isinstance(meta, dict):
+            raise ValueError("frontmatter가 dict가 아님")
+    except (ValueError, yaml.YAMLError):
+        return _fallback_title(path)  # write_*_note()가 만든 게 아니라 사람이 직접 넣은 파일
+
+    if doc_type == "weeklynote":
+        topics = meta.get("topics") or []
+        return f"{meta.get('date', path.stem)} 주간노트" + (f" · {topics[0]}" if topics else "")
+    key = _WRITER_TITLE_KEY.get(doc_type)
+    value = str(meta.get(key, path.stem)) if key else path.stem
+    return value if len(value) <= 60 else f"{value[:60]}…"
+
+
+def _processed_title(stem: str) -> str:
+    words = stem.replace("_", "-").split("-")
+    return " ".join(w if w.isdigit() else w.capitalize() for w in words)
+
+
+def sync_from_disk() -> dict:
+    """data/writer, data/processed를 훑어서 (1) 새 파일/변경된 파일은 upsert하고 (2) 카탈로그엔
+    있는데 파일이 없어진 건 prune한다. 앱이 아니라 사람이 직접 data/ 밑에 파일을 추가하거나
+    지웠을 때도(파인더, 다른 툴에서 export한 파일 등) 카탈로그가 따라가게 하는 자리 —
+    app/main.py 시작 시점에 호출됨. scripts/backfill_catalog.py도 이 함수를 그대로 씀."""
+    upserted = 0
+    for doc_type_dir in sorted(p for p in WRITER_DIR.iterdir() if p.is_dir()) if WRITER_DIR.exists() else []:
+        for path in sorted(doc_type_dir.glob("*.md")):
+            upserted += upsert_document(
+                path, source_type="writer", doc_type=doc_type_dir.name,
+                title=_writer_title(path, doc_type_dir.name),
+            )
+    for path in sorted(PROCESSED_DIR.glob("**/*.md")) if PROCESSED_DIR.exists() else []:
+        upserted += upsert_document(
+            path, source_type="ingest", doc_type="processed", title=_processed_title(path.stem)
+        )
+
+    pruned = prune_missing()
+    return {"upserted": upserted, "pruned": len(pruned)}

@@ -42,6 +42,13 @@ function fixEmphasisSpacing(text) {
   return text.replace(/([)\]"'”’])\*\*(?=[가-힣])/g, "$1** ");
 }
 
+// catalog.py는 created_at을 UTC ISO 문자열로 저장한다 — 화면엔 글자수 대신 이 날짜를 보여준다.
+function formatDocDate(isoString) {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
+}
+
 function renderMarkdownInto(container, rawText) {
   const mathTokens = [];
   const protectedText = fixEmphasisSpacing(rawText).replace(/\$\$[\s\S]+?\$\$|\$[^\n$]+?\$/g, (match) => {
@@ -65,6 +72,57 @@ function renderMarkdownInto(container, rawText) {
   }
 }
 
+// writer 문서는 "# 목차" 헤딩 아래 평문 번호 목록("1. fp32")으로 목차를 쓰고, 그 아래
+// 본문 헤딩도 같은 텍스트("# 1. fp32")로 나온다 — 마크다운 링크가 아니라서 클릭해도 아무 일도
+// 안 났다. 헤딩마다 id를 붙이고 목차 항목 텍스트를 헤딩 텍스트와 매칭해서 클릭 시 스크롤되게 한다.
+function wireTocLinks(container) {
+  const headings = Array.from(container.querySelectorAll("h1, h2, h3, h4, h5, h6"));
+  if (headings.length === 0) return;
+
+  const slugCounts = new Map();
+  const labelOf = (text) => text.trim().replace(/^\d+(?:\.\d+)*\.?\s*/, "").toLowerCase();
+  // daily note의 중첩 목차(부모 항목 아래 하위 개념)에서 li.textContent는 중첩된 <ol>의
+  // 텍스트까지 그대로 이어붙여 돌려준다(예: "Docker" 항목 밑에 "Dockerfile"/"Image"가 중첩돼
+  // 있으면 "DockerDockerfileImage..."가 됨) — 그래서 하위 항목이 있는 부모 항목만 매칭이
+  // 항상 실패했다. 중첩 리스트를 떼어낸 사본에서 읽어야 그 li 자신의 라벨만 나온다.
+  const ownLabel = (li) => {
+    const clone = li.cloneNode(true);
+    clone.querySelectorAll("ol, ul").forEach((nested) => nested.remove());
+    return labelOf(clone.textContent);
+  };
+
+  const headingByLabel = new Map();
+  headings.forEach((h) => {
+    const base = h.textContent.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "") || "section";
+    const n = (slugCounts.get(base) || 0) + 1;
+    slugCounts.set(base, n);
+    h.id = n === 1 ? base : `${base}-${n}`;
+    const label = labelOf(h.textContent);
+    if (!headingByLabel.has(label)) headingByLabel.set(label, h);
+  });
+
+  headings.forEach((tocHeading) => {
+    if (!/^(목차|table of contents)/i.test(tocHeading.textContent.trim())) return;
+    let list = tocHeading.nextElementSibling;
+    while (list && !["OL", "UL"].includes(list.tagName)) {
+      if (/^H[1-6]$/.test(list.tagName)) return; // 목차 헤딩 바로 다음에 리스트가 없으면 포기
+      list = list.nextElementSibling;
+    }
+    if (!list) return;
+    list.querySelectorAll("li").forEach((li) => {
+      const target = headingByLabel.get(ownLabel(li));
+      if (!target) return;
+      li.classList.add("toc-link");
+      li.addEventListener("click", (e) => {
+        // 하위 항목 클릭이 부모 li까지 버블링되면 부모 항목의 핸들러가 나중에 또 실행되면서
+        // 스크롤 위치가 부모 섹션으로 덮어써진다 — 부모 항목도 이제 정상 매칭되므로 막아야 함.
+        e.stopPropagation();
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+  });
+}
+
 // ---- corpus: seeds the empty state with example prompts, tags the rail with doc count ----
 function pickSample(list, n) {
   if (list.length <= n) return list;
@@ -72,16 +130,24 @@ function pickSample(list, n) {
   return Array.from({ length: n }, (_, i) => list[Math.floor(i * step)]);
 }
 
+// rail-foot 태그는 /corpus의 count(= RAG에 색인된 코퍼스 문서 수, doc_type="processed"만
+// 집계 — 아직 재인덱싱되지 않는 데일리/위클리/TIL은 여기 안 잡힘, README 로드맵의
+// "학습 기록 재인덱싱" 항목 참고)가 아니라 /documents 전체 개수를 쓴다. 안 그러면
+// 매일 노트를 써도 이 숫자가 그대로라 "업데이트가 안 된다"는 오해를 산다.
 async function loadCorpus() {
   try {
-    const res = await fetch("/corpus");
-    if (!res.ok) return;
-    const { count, topics } = await res.json();
+    const [corpusRes, docsRes] = await Promise.all([fetch("/corpus"), fetch("/documents")]);
 
-    if (count > 0) {
-      corpusTag.textContent = `${count}개 파일`;
-      corpusTag.hidden = false;
+    if (docsRes.ok) {
+      const docs = await docsRes.json();
+      if (docs.length > 0) {
+        corpusTag.textContent = `${docs.length}개 문서`;
+        corpusTag.hidden = false;
+      }
     }
+
+    if (!corpusRes.ok) return;
+    const { topics } = await corpusRes.json();
 
     pickSample(topics, 3).forEach((topic) => {
       const btn = document.createElement("button");
@@ -102,6 +168,7 @@ async function loadCorpus() {
 // arrow keys move focus and activate the panel together.
 // =====================================================================
 const railTabs = Array.from(document.querySelectorAll(".rail-tab"));
+const railIndicator = document.getElementById("rail-indicator");
 const panels = {
   chat: document.getElementById("panel-chat"),
   documents: document.getElementById("panel-documents"),
@@ -113,6 +180,7 @@ function activatePanel(name) {
     const isActive = tab.dataset.panel === name;
     tab.setAttribute("aria-selected", String(isActive));
     tab.tabIndex = isActive ? 0 : -1;
+    if (isActive) moveRailIndicatorTo(tab);
   });
   Object.entries(panels).forEach(([key, el]) => {
     el.hidden = key !== name;
@@ -134,6 +202,103 @@ railTabs.forEach((tab, i) => {
   });
 });
 
+// ---- rail indicator: one shared bar springs to the active tab, instead of a fresh
+// element popping in/out per tab — the physical "selection glides over" feel of a
+// segmented control or a Dock highlight. Apple's damping/response model (see
+// apple-design skill notes), implemented as a tiny critically-damped spring since this
+// project has no animation library. Retargeting mid-flight (a second click before the
+// first settles) just moves `target` — the existing velocity carries through, so it's
+// interruptible rather than restarting from a hard stop. ----
+function makeSpring({ damping = 1, response = 0.32 } = {}) {
+  const angularFreq = (2 * Math.PI) / response;
+  const stiffness = angularFreq * angularFreq;
+  const dampingCoef = 2 * damping * Math.sqrt(stiffness);
+  let value = 0;
+  let velocity = 0;
+  let target = 0;
+  return {
+    reset(v) {
+      value = v;
+      velocity = 0;
+      target = v;
+    },
+    set(t) {
+      target = t;
+    },
+    step(dt) {
+      const force = -stiffness * (value - target) - dampingCoef * velocity;
+      velocity += force * dt;
+      value += velocity * dt;
+      return value;
+    },
+    get value() {
+      return value;
+    },
+    settled() {
+      return Math.abs(target - value) < 0.5 && Math.abs(velocity) < 0.5;
+    },
+  };
+}
+
+const railSpring = makeSpring();
+let railAnimHandle = null;
+let railAxis = "y"; // "y" = desktop vertical rail, "x" = mobile top-bar
+const railMobileQuery = window.matchMedia("(max-width: 40rem)");
+
+function railTargetFor(tab) {
+  if (!tab) return 0;
+  return railAxis === "y"
+    ? tab.offsetTop + tab.offsetHeight / 2 - railIndicator.offsetHeight / 2
+    : tab.offsetLeft + tab.offsetWidth / 2 - railIndicator.offsetWidth / 2;
+}
+
+function paintRailIndicator(v) {
+  railIndicator.style.transform = railAxis === "y" ? `translateY(${v}px)` : `translateX(${v}px)`;
+}
+
+function runRailSpring() {
+  if (railAnimHandle != null) return;
+  let last = performance.now();
+  const frame = (now) => {
+    const dt = Math.min((now - last) / 1000, 1 / 30);
+    last = now;
+    paintRailIndicator(railSpring.step(dt));
+    railAnimHandle = railSpring.settled() ? null : requestAnimationFrame(frame);
+  };
+  railAnimHandle = requestAnimationFrame(frame);
+}
+
+const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+function moveRailIndicatorTo(tab) {
+  const target = railTargetFor(tab);
+  if (prefersReducedMotion.matches) {
+    railSpring.reset(target);
+    paintRailIndicator(target);
+    return;
+  }
+  railSpring.set(target);
+  runRailSpring();
+}
+
+// resize/orientation changes swap the indicator's axis entirely (top-to-bottom vs
+// left-to-right) — springing across that jump would look like a diagonal glitch, so
+// these snap instead of animating.
+function snapRailIndicator() {
+  railAxis = railMobileQuery.matches ? "x" : "y";
+  railIndicator.classList.toggle("rail-indicator--horizontal", railAxis === "x");
+  const active = railTabs.find((t) => t.getAttribute("aria-selected") === "true") || railTabs[0];
+  const target = railTargetFor(active);
+  railSpring.reset(target);
+  paintRailIndicator(target);
+}
+
+window.addEventListener("resize", snapRailIndicator);
+railMobileQuery.addEventListener("change", snapRailIndicator);
+snapRailIndicator();
+// webfonts finishing their swap can nudge tab widths by a px or two after first paint
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(snapRailIndicator);
+
 // ---- documents panel: list + reader ----
 const docListEl = document.getElementById("doc-list");
 const docReaderEmpty = document.getElementById("doc-reader-empty");
@@ -141,13 +306,20 @@ const docReaderBody = document.getElementById("doc-reader-body");
 const docReaderScroll = document.getElementById("doc-reader");
 const docCountTag = document.getElementById("doc-count-tag");
 const docFolderTabs = document.getElementById("doc-folder-tabs");
+const tagFilterPill = document.getElementById("tag-filter-pill");
+const tagFilterLabel = document.getElementById("tag-filter-label");
 
-// doc_type은 저장 경로(data/writer/dailynote 등)에서 그대로 온 값 — 화면 표시용 한글 라벨만 매핑
-const DOC_TYPE_LABELS = { dailynote: "데일리노트", weeklynote: "위클리노트", til: "TIL", processed: "강의자료" };
+// doc_type은 저장 경로(data/writer/dailynote 등)에서 그대로 온 값 — 화면 표시용 한글 라벨만 매핑.
+// "processed"는 scripts/preprocess.py가 data/raw/* 를 무엇이든 markitdown으로 변환해
+// data/processed/*.md 에 넣으면 그대로 붙는 이름이라 "강의자료"로 못 박으면 안 됨 —
+// 지금까지 CS231n 강의노트만 넣어봐서 우연히 그렇게 보였을 뿐, 논문이든 뭐든 같은
+// 파이프라인을 타면 여기로 들어온다. 그래서 문서함 subtitle과 같은 용어인 "코퍼스"로 표기.
+const DOC_TYPE_LABELS = { dailynote: "데일리노트", weeklynote: "위클리노트", til: "TIL", processed: "코퍼스" };
 
 let documentsPromise = null;
 let allDocuments = []; // 폴더 탭을 서버 왕복 없이 즉시 전환하려고 전체를 한 번만 받아 클라이언트에서 필터링
 let activeDocType = null; // null = 전체
+let activeTag = null; // null = 태그 필터 없음, 리더에서 태그를 클릭하면 설정됨
 
 // shaped like the doc-card it's about to become, not a spinner — so the list doesn't
 // visually jump when the real cards land
@@ -175,7 +347,7 @@ function ensureDocumentsLoaded() {
     .then((docs) => {
       allDocuments = docs;
       renderFolderTabs();
-      applyDocTypeFilter();
+      applyFilters();
       return docs;
     })
     .catch((err) => {
@@ -198,7 +370,7 @@ function renderFolderTabs() {
     btn.addEventListener("click", () => {
       activeDocType = value;
       renderFolderTabs();
-      applyDocTypeFilter();
+      applyFilters();
     });
     docFolderTabs.appendChild(btn);
   };
@@ -206,11 +378,44 @@ function renderFolderTabs() {
   types.forEach((t) => makeTab(t, DOC_TYPE_LABELS[t] || t));
 }
 
-function applyDocTypeFilter() {
-  const filtered = activeDocType ? allDocuments.filter((d) => d.doc_type === activeDocType) : allDocuments;
+// 폴더(doc_type)와 태그, 두 축을 AND로 겹쳐서 걸러낸다 — 리더에서 태그를 클릭해도
+// 폴더 탭 상태는 그대로 두고 목록만 좁혀지도록.
+function applyFilters() {
+  const filtered = allDocuments.filter((d) => {
+    if (activeDocType && d.doc_type !== activeDocType) return false;
+    if (activeTag && !d.tags.includes(activeTag)) return false;
+    return true;
+  });
   renderDocList(filtered);
   docCountTag.textContent = `${filtered.length}개 문서`;
 }
+
+function renderTagFilterPill() {
+  if (!activeTag) {
+    tagFilterPill.hidden = true;
+    return;
+  }
+  tagFilterLabel.textContent = `#${activeTag}`;
+  tagFilterPill.hidden = false;
+}
+
+// 리더에서 태그 라벨을 클릭하면 호출됨 — 지금 읽고 있는 문서가 필터 결과에서 사라지지
+// 않도록 폴더 필터는 "전체"로 풀어준다 (그 문서가 다른 폴더에 있었더라도 보이게).
+function setTagFilter(tag) {
+  activeTag = tag;
+  activeDocType = null;
+  renderFolderTabs();
+  renderTagFilterPill();
+  applyFilters();
+}
+
+function clearTagFilter() {
+  activeTag = null;
+  renderTagFilterPill();
+  applyFilters();
+}
+
+tagFilterPill.addEventListener("click", clearTagFilter);
 
 function renderDocList(docs) {
   docListEl.innerHTML = "";
@@ -218,12 +423,13 @@ function renderDocList(docs) {
     docListEl.innerHTML = `<p class="doc-list-status">이 폴더에는 문서가 없습니다.</p>`;
     return;
   }
-  docs.forEach((doc) => {
+  docs.forEach((doc, i) => {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "doc-card";
     card.dataset.docId = doc.id;
     card.setAttribute("aria-current", "false");
+    card.style.setProperty("--i", Math.min(i, 10));
     card.innerHTML = `
       <p class="doc-card-title"></p>
       <p class="doc-card-excerpt"></p>
@@ -232,7 +438,7 @@ function renderDocList(docs) {
     `;
     card.querySelector(".doc-card-title").textContent = doc.title;
     card.querySelector(".doc-card-excerpt").textContent = doc.excerpt;
-    card.querySelector(".doc-card-meta").textContent = `${doc.char_count.toLocaleString()}자`;
+    card.querySelector(".doc-card-meta").textContent = formatDocDate(doc.created_at);
     const tagsEl = card.querySelector(".doc-card-tags");
     doc.tags.forEach((tag) => {
       const chip = document.createElement("span");
@@ -251,24 +457,36 @@ function renderDocList(docs) {
 function syncDocTagsCache(docId, tags) {
   const cached = allDocuments.find((d) => d.id === docId);
   if (cached) cached.tags = tags;
-  applyDocTypeFilter(); // 카드 태그 칩을 최신 상태로 다시 그리는데, 이때 현재 열려있는 카드의 강조가 풀림
+  applyFilters(); // 카드 태그 칩을 최신 상태로 다시 그리는데, 이때 현재 열려있는 카드의 강조가 풀림
   markActiveDocCard(docId); // 그래서 바로 다시 표시해줌
 }
 
-function renderReaderTags(docId, tags) {
+function renderReaderTags(docId, tags, newTag) {
   const listEl = docReaderBody.querySelector("#reader-tag-list");
   listEl.innerHTML = "";
   tags.forEach((tag) => {
     const chip = document.createElement("span");
     chip.className = "tag-chip tag-chip--removable";
-    chip.innerHTML = `<span></span><button type="button" aria-label="${tag} 태그 삭제">×</button>`;
-    chip.querySelector("span").textContent = tag;
-    chip.querySelector("button").addEventListener("click", async () => {
+    if (tag === activeTag) chip.classList.add("is-active-filter");
+    if (tag === newTag) chip.classList.add("is-new"); // 방금 추가된 칩만 pill-in으로 등장
+    chip.innerHTML = `<button type="button" class="tag-chip-label"></button><button type="button" class="tag-chip-remove" aria-label="${tag} 태그 삭제">×</button>`;
+    chip.querySelector(".tag-chip-label").textContent = tag;
+    chip.querySelector(".tag-chip-label").setAttribute(
+      "aria-label",
+      `${tag} 태그가 달린 문서만 보기`
+    );
+    chip.querySelector(".tag-chip-label").addEventListener("click", () => {
+      if (tag === activeTag) clearTagFilter();
+      else setTagFilter(tag);
+      renderReaderTags(docId, tags); // 방금 누른 칩의 강조 상태(is-active-filter)를 즉시 반영
+    });
+    chip.querySelector(".tag-chip-remove").addEventListener("click", async () => {
       const res = await fetch(`/documents/${encodeURIComponent(docId)}/tags/${encodeURIComponent(tag)}`, {
         method: "DELETE",
       });
       if (res.ok) {
         const updated = await res.json();
+        if (tag === activeTag) clearTagFilter();
         renderReaderTags(docId, updated);
         syncDocTagsCache(docId, updated);
       }
@@ -313,21 +531,53 @@ async function openDocument(docId) {
       <div class="doc-reader-tags">
         <div class="tag-chip-list" id="reader-tag-list"></div>
         <form class="tag-add-form" id="tag-add-form">
-          <input type="text" id="tag-add-input" placeholder="태그 추가" maxlength="30" autocomplete="off" />
-          <button type="submit">추가</button>
+          <button type="button" class="tag-add-chip" id="tag-add-trigger">+ 태그</button>
+          <input type="text" id="tag-add-input" class="tag-add-input" placeholder="태그 이름" maxlength="30" autocomplete="off" hidden />
         </form>
       </div>
       <div class="agent-text doc-reader-content"></div>
     `;
     docReaderBody.querySelector(".doc-reader-title").textContent = doc.title;
     docReaderBody.querySelector(".doc-reader-file").textContent =
-      `${doc.id} · ${doc.char_count.toLocaleString()}자`;
-    renderMarkdownInto(docReaderBody.querySelector(".doc-reader-content"), doc.content);
+      `${doc.id} · ${formatDocDate(doc.created_at)}`;
+    const contentEl = docReaderBody.querySelector(".doc-reader-content");
+    renderMarkdownInto(contentEl, doc.content);
+    wireTocLinks(contentEl);
     renderReaderTags(doc.id, doc.tags);
-    docReaderBody.querySelector("#tag-add-form").addEventListener("submit", async (e) => {
+    // restart the settle-in animation on every load — the class was already removed
+    // by the skeleton swap above, so a fresh reflow + re-add is enough to retrigger it
+    docReaderBody.classList.remove("is-entering");
+    void docReaderBody.offsetWidth;
+    docReaderBody.classList.add("is-entering");
+
+    // 태그 추가 UI: "+ 태그" 고스트 칩을 클릭하면 같은 자리에서 칩 모양 입력으로 바뀜 —
+    // 별도 제출 버튼 없이 Enter로 저장, Escape/빈 채로 blur하면 다시 고스트 칩으로 되돌아감
+    const tagAddForm = docReaderBody.querySelector("#tag-add-form");
+    const tagAddTrigger = docReaderBody.querySelector("#tag-add-trigger");
+    const tagAddInput = docReaderBody.querySelector("#tag-add-input");
+
+    const showTagInput = () => {
+      tagAddTrigger.hidden = true;
+      tagAddInput.hidden = false;
+      tagAddInput.focus();
+    };
+    const resetTagInput = () => {
+      tagAddInput.value = "";
+      tagAddInput.hidden = true;
+      tagAddTrigger.hidden = false;
+    };
+
+    tagAddTrigger.addEventListener("click", showTagInput);
+    tagAddInput.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") resetTagInput();
+    });
+    tagAddInput.addEventListener("blur", () => {
+      if (!tagAddInput.value) resetTagInput(); // 타이핑 중인 내용은 blur로 지우지 않음
+    });
+
+    tagAddForm.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const input = docReaderBody.querySelector("#tag-add-input");
-      const name = input.value.trim();
+      const name = tagAddInput.value.trim();
       if (!name) return;
       const res = await fetch(`/documents/${encodeURIComponent(doc.id)}/tags`, {
         method: "POST",
@@ -335,9 +585,9 @@ async function openDocument(docId) {
         body: JSON.stringify({ name }),
       });
       if (res.ok) {
-        input.value = "";
         const updated = await res.json();
-        renderReaderTags(doc.id, updated);
+        resetTagInput();
+        renderReaderTags(doc.id, updated, name);
         syncDocTagsCache(doc.id, updated);
       }
     });
@@ -379,10 +629,11 @@ function renderSearchResults(hits, query) {
     return;
   }
   searchResultsEl.innerHTML = "";
-  hits.forEach((hit) => {
+  hits.forEach((hit, i) => {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "search-hit";
+    card.style.setProperty("--i", Math.min(i, 10));
     card.innerHTML = `
       <p class="search-hit-title"></p>
       <p class="search-hit-section"></p>

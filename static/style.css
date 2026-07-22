@@ -41,6 +41,10 @@
   --radius-card: 8px;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* press-release "snap": near-critically-damped with a hint of overshoot — the return
+     half of a tap, not a UI fade. see the apple-design craft-pass note near the bottom
+     of this file for where/why this is used instead of --ease-out. */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   --display: "Pretendard", -apple-system, "Segoe UI", sans-serif;
   --sans: "Pretendard", -apple-system, "Segoe UI", sans-serif;
@@ -154,10 +158,29 @@ body {
 }
 
 .rail-tabs {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.4rem;
+}
+
+/* one shared bar that app.js spring-animates to the active tab's position, instead of
+   each tab owning its own ::before — this is what makes the selection *move* between
+   tabs (like a segmented-control thumb) instead of vanishing on one and popping on the
+   next. base position/size is desktop-vertical; .rail-indicator--horizontal below is the
+   mobile-folded variant app.js toggles on. transform is JS-driven every frame while the
+   spring is settling, so no CSS transition here — that would fight the spring. */
+.rail-indicator {
+  position: absolute;
+  left: -0.5rem;
+  top: 0;
+  width: 2px;
+  height: 1.35rem;
+  border-radius: 0 2px 2px 0;
+  background: var(--moss);
+  pointer-events: none;
+  will-change: transform;
 }
 
 .rail-tab {
@@ -174,11 +197,12 @@ body {
   color: var(--ink-mute);
   cursor: pointer;
   transition: color 0.15s var(--ease-out), background 0.15s var(--ease-out),
-    transform 0.1s var(--ease-out);
+    transform 0.4s var(--ease-spring);
 }
 
 .rail-tab:active {
-  transform: scale(0.95);
+  transform: scale(0.93);
+  transition-duration: 0.05s;
 }
 
 .rail-tab-icon {
@@ -212,18 +236,6 @@ body {
   color: var(--moss);
 }
 
-.rail-tab[aria-selected="true"]::before {
-  content: "";
-  position: absolute;
-  left: -0.5rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 2px;
-  height: 1.35rem;
-  border-radius: 0 2px 2px 0;
-  background: var(--moss);
-}
-
 .rail-tab:focus-visible {
   outline: 2px solid var(--moss);
   outline-offset: 2px;
@@ -246,7 +258,15 @@ body {
   text-wrap: balance;
 }
 
-/* ---- panel: one active view, full remaining space ---- */
+/* ---- panel: one active view, full remaining space ----
+   switching which panel is visible is instant — [hidden] flips straight to
+   display:none, no transition, no navigation cost. (an entrance fade+scale was tried
+   here and reverted 2026-07-20 — on a full panel it read as the whole screen
+   "wobbling" on load rather than a subtle settle, especially stacked with the load-time
+   layout correction the floating-chrome experiment was also doing at the time. small,
+   contained elements — doc-card, search-hit, tag-filter-pill — keep their own
+   materialize-in animations below; a full-panel version of the same idea was too much
+   motion for too little payoff.) */
 .panel {
   flex: 1;
   min-width: 0;
@@ -279,7 +299,7 @@ body {
   font-family: var(--display);
   font-weight: 700;
   font-size: 1.5rem;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
   margin: 0 0 0.3rem;
   color: var(--ink);
   text-wrap: balance;
@@ -330,7 +350,7 @@ body {
   padding: 0.5rem 0.75rem;
   cursor: pointer;
   transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
-    background 0.15s var(--ease-out), transform 0.1s var(--ease-out);
+    background 0.15s var(--ease-out), transform 0.4s var(--ease-spring);
 }
 
 .new-chat-icon {
@@ -346,6 +366,7 @@ body {
 
 .new-chat-btn:active {
   transform: scale(0.97);
+  transition-duration: 0.05s;
 }
 
 .new-chat-btn:focus-visible {
@@ -357,6 +378,7 @@ body {
 .transcript {
   flex: 1 1 auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 1.75rem clamp(1.25rem, 4vw, 2.5rem) 1.25rem;
 }
 
@@ -511,7 +533,7 @@ body {
   padding: 0.5rem 0.75rem;
   cursor: pointer;
   transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
-    background 0.15s var(--ease-out), transform 0.1s var(--ease-out);
+    background 0.15s var(--ease-out), transform 0.4s var(--ease-spring);
 }
 
 .chip-example:hover {
@@ -522,6 +544,7 @@ body {
 
 .chip-example:active {
   transform: scale(0.97);
+  transition-duration: 0.05s;
 }
 
 /* ---- turn: shared timeline row ----
@@ -875,7 +898,7 @@ body {
   padding: 0.5rem 0.75rem;
   cursor: pointer;
   transition: border-color 0.15s var(--ease-out), background 0.15s var(--ease-out),
-    transform 0.1s var(--ease-out);
+    transform 0.4s var(--ease-spring);
 }
 
 .retry-btn:hover {
@@ -885,6 +908,12 @@ body {
 
 .retry-btn:active {
   transform: scale(0.97);
+  transition-duration: 0.05s;
+}
+
+.retry-btn:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
 }
 
 /* ---- composer ---- */
@@ -960,7 +989,7 @@ body {
   padding: 0.5rem 0.75rem;
   cursor: pointer;
   transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
-    background 0.15s var(--ease-out), transform 0.1s var(--ease-out), opacity 0.15s var(--ease-out);
+    background 0.15s var(--ease-out), transform 0.4s var(--ease-spring), opacity 0.15s var(--ease-out);
 }
 
 .prompt-bar button:hover:not(:disabled) {
@@ -971,6 +1000,7 @@ body {
 
 .prompt-bar button:active:not(:disabled) {
   transform: scale(0.96);
+  transition-duration: 0.05s;
 }
 
 .prompt-bar button:disabled {
@@ -988,12 +1018,74 @@ body {
    the reader sits on --bg-raised-2 (the same sage tint the "filed" tabs use elsewhere)
    instead of --bg-raised — a quiet temperature shift that separates "reading a source"
    from "reading a chat bubble" without introducing a new hue. */
-.doc-folder-tabs {
+.doc-filter-row {
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0 0.75rem 0.6rem;
+}
+
+.doc-folder-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  padding: 0 0.75rem 0.6rem;
+}
+
+/* set by clicking a tag in the reader — narrows the list to that tag on top of
+   whatever folder is selected. its own × is the only way to clear it, same
+   "chip that carries its own dismissal" shape as a removable tag-chip. */
+.tag-filter-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--bg);
+  background: var(--moss);
+  border: 1px solid var(--moss);
+  border-radius: 999px;
+  padding: 0.3rem 0.6rem 0.3rem 0.7rem;
+  cursor: pointer;
+  animation: pill-in 0.3s var(--ease-spring) both;
+  transition: opacity 0.15s var(--ease-out), transform 0.4s var(--ease-spring);
+}
+
+/* the pill only ever appears/disappears via [hidden] toggling (never a fresh DOM
+   node), so this keyed off :not([hidden]) restarts every time it's shown — same
+   materialize-not-pop idea as .turn's rise, just with a touch of scale-spring since
+   this one is a discrete "a filter just turned on" event, not a list item settling in */
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tag-filter-pill:hover {
+  opacity: 0.85;
+}
+
+.tag-filter-pill:active {
+  transform: scale(0.96);
+  transition-duration: 0.05s;
+}
+
+.tag-filter-pill:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+.tag-filter-clear {
+  font-size: 0.9375rem;
+  line-height: 1;
 }
 
 .folder-tab {
@@ -1005,11 +1097,22 @@ body {
   border-radius: 999px;
   padding: 0.3rem 0.7rem;
   cursor: pointer;
-  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out), background 0.15s var(--ease-out);
+  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
+    background 0.15s var(--ease-out), transform 0.4s var(--ease-spring);
 }
 
 .folder-tab:hover {
   border-color: var(--rule-strong);
+}
+
+.folder-tab:active {
+  transform: scale(0.96);
+  transition-duration: 0.05s;
+}
+
+.folder-tab:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
 }
 
 .folder-tab[aria-selected="true"] {
@@ -1029,6 +1132,7 @@ body {
   flex: none;
   width: 18rem;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border-right: 1px solid var(--rule);
   padding: 0.75rem;
   display: flex;
@@ -1119,17 +1223,28 @@ body {
   border: 1px solid var(--rule);
   border-radius: var(--radius-card);
   cursor: pointer;
+  animation: rise 0.22s var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 25ms);
   transition: background 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
-    transform 0.1s var(--ease-out);
+    box-shadow 0.15s var(--ease-out), transform 0.35s var(--ease-spring);
 }
 
+/* lift on hover, dip further on press — the compound feedback reads as one card
+   actually rising off the list rather than two unrelated color/scale changes */
 .doc-card:hover {
   border-color: var(--rule-strong);
   box-shadow: var(--shadow-raised);
+  transform: translateY(-1px);
 }
 
 .doc-card:active {
-  transform: scale(0.99);
+  transform: translateY(-1px) scale(0.98);
+  transition-duration: 0.05s;
+}
+
+.doc-card:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
 }
 
 .doc-card[aria-current="true"] {
@@ -1185,7 +1300,41 @@ body {
   padding: 0.1rem 0.5rem;
 }
 
-.tag-chip--removable button {
+/* in the reader, a filed-away tag doubles as a filter trigger — clicking the label
+   (not the × ) narrows the doc list to that tag. filled solid instead of moss-soft
+   so "this is the tag currently narrowing the list" reads at a glance. */
+.tag-chip.is-active-filter {
+  color: var(--bg);
+  background: var(--moss);
+}
+
+/* the just-added chip materializes with the same discrete-event pop the
+   tag-filter-pill uses, instead of appearing as a silent DOM diff */
+.tag-chip.is-new {
+  animation: pill-in 0.3s var(--ease-spring) both;
+}
+
+.tag-chip-label {
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  transition: opacity 0.1s var(--ease-out);
+}
+
+.tag-chip-label:hover {
+  opacity: 0.75;
+}
+
+.tag-chip-label:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+.tag-chip-remove {
   border: none;
   background: none;
   color: inherit;
@@ -1193,12 +1342,25 @@ body {
   line-height: 1;
   cursor: pointer;
   padding: 0;
+  transition: transform 0.3s var(--ease-spring);
+}
+
+.tag-chip-remove:active {
+  transform: scale(0.8);
+  transition-duration: 0.05s;
+}
+
+.tag-chip-remove:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 1px;
+  border-radius: 2px;
 }
 
 .doc-reader {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--bg-raised-2);
   padding: clamp(1.5rem, 4vw, 3rem);
 }
@@ -1224,6 +1386,12 @@ body {
 .doc-reader-body {
   max-width: 42rem;
   margin: 0 auto;
+}
+
+/* toggled from JS on every document load (class removed + re-added to force a
+   restart) so switching documents reads as new content settling in, not a hard cut */
+.doc-reader-body.is-entering {
+  animation: rise 0.22s var(--ease-out) both;
 }
 
 .doc-reader-head {
@@ -1265,40 +1433,74 @@ body {
 }
 
 .tag-add-form {
-  display: flex;
-  gap: 0.3rem;
+  display: inline-flex;
+  align-items: center;
 }
 
-.tag-add-form input {
+/* dashed = "not planted yet", matching the solid/dashed distinction already used
+   for filed vs. active state elsewhere — sized/shaped exactly like .tag-chip so it
+   reads as part of the same chip family, not a separate form control bolted on. */
+.tag-add-chip {
+  display: inline-flex;
+  align-items: center;
   font-family: var(--mono);
-  font-size: 0.75rem;
-  width: 8rem;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid var(--rule);
+  font-size: 0.625rem;
+  color: var(--ink-faint);
+  background: none;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
+    transform 0.3s var(--ease-spring);
+}
+
+.tag-add-chip:hover {
+  color: var(--moss);
+  border-color: var(--moss);
+}
+
+.tag-add-chip:active {
+  transform: scale(0.94);
+  transition-duration: 0.05s;
+}
+
+.tag-add-chip:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+/* replaces the ghost chip in place on click — solid moss border reads as "editing
+   now", the same meaning moss already carries for active/live state elsewhere */
+.tag-add-input {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  width: 7rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--moss);
   border-radius: 999px;
   background: var(--bg-raised);
   color: var(--ink);
+  animation: pill-in 0.2s var(--ease-spring) both;
 }
 
-.tag-add-form button {
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--ink-faint);
-  background: var(--bg-raised);
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  padding: 0.25rem 0.7rem;
-  cursor: pointer;
-}
-
-.tag-add-form button:hover {
-  border-color: var(--moss);
-  color: var(--moss);
+.tag-add-input:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
 }
 
 .doc-reader-content {
   font-size: 1rem;
   line-height: 1.75;
+}
+
+.doc-reader-content .toc-link {
+  cursor: pointer;
+  color: var(--moss);
+}
+
+.doc-reader-content .toc-link:hover {
+  text-decoration: underline;
 }
 
 /* ---- search panel ---- */
@@ -1353,6 +1555,7 @@ body {
 .search-results {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 1rem clamp(1.25rem, 4vw, 2.5rem) 2rem;
   display: flex;
   flex-direction: column;
@@ -1375,17 +1578,26 @@ body {
   border: 1px solid var(--rule);
   border-radius: var(--radius-card);
   cursor: pointer;
+  animation: rise 0.22s var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 25ms);
   transition: border-color 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out),
-    transform 0.1s var(--ease-out);
+    transform 0.35s var(--ease-spring);
 }
 
 .search-hit:hover {
   border-color: var(--rule-strong);
   box-shadow: var(--shadow-raised);
+  transform: translateY(-1px);
 }
 
 .search-hit:active {
-  transform: scale(0.99);
+  transform: translateY(-1px) scale(0.98);
+  transition-duration: 0.05s;
+}
+
+.search-hit:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
 }
 
 .search-hit-title {
@@ -1431,7 +1643,13 @@ body {
   .skeleton-line,
   .sprout-stem,
   .sprout-leaf,
-  .sprout-seed {
+  .sprout-seed,
+  .doc-card,
+  .search-hit,
+  .doc-reader-body.is-entering,
+  .tag-filter-pill,
+  .tag-chip.is-new,
+  .tag-add-input {
     animation: none !important;
     transition: none !important;
   }
@@ -1484,11 +1702,12 @@ body {
     padding: 0.5rem 0.75rem;
   }
 
-  .rail-tab[aria-selected="true"]::before {
-    left: 50%;
+  /* app.js adds this class when the rail folds to a top bar, and switches which axis
+     it drives (translateX along the bottom edge instead of translateY down the side). */
+  .rail-indicator--horizontal {
+    left: 0;
     top: auto;
     bottom: -1px;
-    transform: translateX(-50%);
     width: 1.25rem;
     height: 2px;
     border-radius: 2px 2px 0 0;

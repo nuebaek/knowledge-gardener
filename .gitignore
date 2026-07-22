@@ -25,3 +25,14 @@ docs/week7.md
 docs/week8.md
 docs/retro_7_init.md
 docs/retro-7th-week.md
+
+# 개인 작업/기획 메모 — 레포에 안 실음
+docs/*.md
+!docs/README.md
+
+# 스파이크/노트북 산출물
+tests/test_visualizer.ipynb
+tests/*.html
+
+# interface-design 스킬의 로컬 스냅샷/시스템 메모 — 도구 산출물, 레포엔 안 실음
+.interface-design/
