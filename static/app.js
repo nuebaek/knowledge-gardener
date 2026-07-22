@@ -738,12 +738,22 @@ function addAgentTurn(data) {
   const filedDocs = (data.saved_documents || []).filter((doc) => doc.type in TOOL_LABELS);
   const hasFiled = filedDocs.length > 0;
   const hasAnswer = Array.isArray(data.tools_used) && data.tools_used.includes("answer_question");
-  const kind = hasFiled ? "filed" : hasAnswer ? "answer" : "plain";
+  const hasMindmap = Boolean(data.mindmap_plaintext);
+  const kind = hasMindmap ? "mindmap" : hasFiled ? "filed" : hasAnswer ? "answer" : "plain";
 
   const turn = createTurn(kind);
   const content = turn.querySelector(".turn-content");
 
-  if (hasFiled) {
+  if (hasMindmap) {
+    content.innerHTML = `
+      <p class="turn-label">mindmap</p>
+      <div class="mindmap-mount"></div>
+    `;
+    const mount = content.querySelector(".mindmap-mount");
+    // renderMindmapInto가 mind-elixir를 처음 쓸 때만 동적으로 로드하는데, 그 다운로드가
+    // 끝나기 전에 이 턴이 스크롤 밖으로 나가있을 수 있어 렌더 완료 후 다시 스크롤해준다.
+    window.renderMindmapInto(mount, data.mindmap_plaintext).then(scrollToBottom);
+  } else if (hasFiled) {
     const stack = document.createElement("div");
     stack.className = "filed-stack";
     filedDocs.forEach((doc) => {

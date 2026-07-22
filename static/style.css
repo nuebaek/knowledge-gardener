@@ -383,7 +383,7 @@ body {
 }
 
 .transcript-inner {
-  max-width: 42rem;
+  max-width: 56rem;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -616,6 +616,25 @@ body {
   background: var(--moss);
   animation: railPulse 1.3s ease-in-out infinite;
 }
+
+/* mindmap도 살아있는(생성된) 응답이라 answer와 같은 moss를 씀 — 새 색 안 늘림 */
+.kind-mindmap .rail-dot {
+  background: var(--moss);
+}
+
+.kind-mindmap .turn-label {
+  color: var(--moss);
+}
+
+.mindmap-mount {
+  height: 28rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-raised);
+  overflow: hidden;
+}
+
 
 @keyframes railPulse {
   0%, 80%, 100% {
@@ -925,7 +944,7 @@ body {
 }
 
 .prompt-bar {
-  max-width: 42rem;
+  max-width: 56rem;
   margin: 0 auto;
   display: flex;
   align-items: flex-end;

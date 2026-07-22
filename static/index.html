@@ -16,6 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap"
     rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mind-elixir/dist/MindElixir.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 
@@ -159,6 +160,22 @@
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+  <script type="module">
+    // mind-elixir는 ESM 전용이라 마크업/스크립트를 UMD로 깔아둔 다른 CDN 라이브러리들과
+    // 같은 방식(window 전역)으로 못 씀 — 동적 import로 가져와서 window에 얇은 헬퍼만 노출.
+    // 마인드맵 tool이 실제로 쓰일 때만 다운로드되도록 정적 import가 아니라 함수 안에서 로드함.
+    window.renderMindmapInto = async function (container, plaintext) {
+      const [{ default: MindElixir }, { plaintextToMindElixir }] = await Promise.all([
+        import("https://cdn.jsdelivr.net/npm/mind-elixir/dist/MindElixir.js"),
+        import("https://cdn.jsdelivr.net/npm/mind-elixir/dist/PlaintextConverter.js"),
+      ]);
+      const data = plaintextToMindElixir(plaintext);
+      const mind = new MindElixir({ el: container, direction: MindElixir.SIDE });
+      mind.init(data);
+      mind.scaleFit(); // init 직후엔 컨테이너 크기에 안 맞춰져 있어서 넘쳐 보임 — 강제로 맞춤
+      return mind;
+    };
+  </script>
   <script src="/app.js"></script>
 </body>
 

@@ -30,6 +30,7 @@ def converse(agent_graph, message: str, thread_id: str) -> ConverseResponse:
     before_count = len(snapshot.values.get("messages", []))
     tools_used = []
     saved_documents = []
+    mindmap_plaintext = None
 
     try:
         result = agent_graph.invoke({"messages": [("human", message)]}, config=config)
@@ -38,6 +39,16 @@ def converse(agent_graph, message: str, thread_id: str) -> ConverseResponse:
             if isinstance(m, AIMessage) and m.tool_calls:
                 tools_used.append(m.tool_calls[0]["name"])
             if isinstance(m, ToolMessage):
+                if m.name == "visualize_mindmap":
+                    # 최종 AIMessage는 LLM이 이 결과를 자기 말로 요약/생략할 수 있어서
+                    # 못 믿는다(saved_documents가 file_name을 ToolMessage에서 직접 뽑는 것과
+                    # 같은 이유) — Mind Elixir plaintext는 ToolMessage에서 그대로 가져온다.
+                    # 문서를 못 찾았을 때는 안내 문구가 오는데, 이건 plaintext 포맷이 아니라
+                    # ("- "로 시작 안 함) 프론트에서 마인드맵으로 렌더 시도하면 깨진다 —
+                    # 그 경우엔 mindmap_plaintext를 세우지 않고 최종 답변 텍스트로만 흘려보낸다.
+                    if m.content.strip().startswith("- "):
+                        mindmap_plaintext = m.content
+                    continue
                 doc_type = m.name
                 file_name = Path(m.content).name
                 saved_documents.append(SavedDocument(type=doc_type, file_name=file_name))
@@ -45,7 +56,12 @@ def converse(agent_graph, message: str, thread_id: str) -> ConverseResponse:
     except Exception as exc:  # LLM 호출 실패 등
         raise HTTPException(status_code=500, detail=f"Agent 실행 실패: {exc}") from exc
 
-    return ConverseResponse(answer=result["messages"][-1].content, tools_used=tools_used, saved_documents=saved_documents)
+    return ConverseResponse(
+        answer=result["messages"][-1].content,
+        tools_used=tools_used,
+        saved_documents=saved_documents,
+        mindmap_plaintext=mindmap_plaintext,
+    )
 
 
 def get_thread_history(agent_graph, thread_id: str) -> ThreadHistoryResponse:
