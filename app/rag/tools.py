@@ -7,7 +7,7 @@ from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
 from app.core import catalog
-from app.rag.chain import build_llm, TOPIC_EXTRACT_PROMPT, generate_recall_question
+from app.rag.chain import apply_fallback, build_llm, TOPIC_EXTRACT_PROMPT, generate_recall_question
 from app.rag.graph import build_rag_graph
 from app.rag.study_session import flatten_conversation, new_session
 from app.schemas.rag import TopicList
@@ -44,7 +44,7 @@ def make_tools(llm=None, qa_graph=None):
     """llm/qa_graph 주입 — 테스트가 임베딩·벡터스토어 없이 툴 표면을 검사할 수 있게."""
     llm = llm if llm is not None else build_llm()
     qa_graph = qa_graph if qa_graph is not None else build_rag_graph()
-    topic_extractor = llm.with_structured_output(TopicList)
+    topic_extractor = apply_fallback(llm, lambda m: m.with_structured_output(TopicList))
 
     @tool(parse_docstring=True)
     def answer_question(question: str) -> str:
