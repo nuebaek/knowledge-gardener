@@ -9,7 +9,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from pathlib import Path
 from app.core import catalog
 from app.core.paths import WRITER_DIR
-from app.rag.chain import build_llm
+from app.rag.chain import apply_fallback, build_llm
 from app.writer.model import DailynoteEntry, WeeklynoteEntry, TilEntry
 
 # ---------------- 프롬프트 ----------------
@@ -157,7 +157,7 @@ BASE_DIR = WRITER_DIR
 
 @lru_cache(maxsize=1)
 def _llm():
-    return build_llm()
+    return apply_fallback(build_llm())
 
 def slugify(text: str, max_len: int = 20) -> str:
     slug = re.sub(r"\s+", "-", text.strip())

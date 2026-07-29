@@ -46,14 +46,47 @@ EVAL_QUESTIONS = [
         "question": "How does a convolutional layer differ from a fully connected layer?",
         "answer":   "A convolutional layer applies shared filter weights locally across the spatial dimensions of the input, preserving spatial structure and drastically reducing parameters, while a fully connected layer connects every input neuron to every output neuron with independent weights.",
     },
+    {
+        "question": "What problem with long sequences does an LSTM address compared to a vanilla RNN?",
+        "answer":   "Vanilla RNNs struggle to carry information across many time steps because gradients vanish or explode during backpropagation through time. LSTMs add a cell state with gated (input/forget/output) updates that let information flow largely unchanged across steps, making long-range dependencies learnable.",
+    },
+    {
+        "question": "What is an adversarial example in the context of image classifiers?",
+        "answer":   "An adversarial example is an input crafted by adding a small, often human-imperceptible perturbation to a correctly classified image so that the model misclassifies it with high confidence, revealing that the model's decision boundary doesn't align with human perception.",
+    },
+    {
+        "question": "When is transfer learning particularly useful?",
+        "answer":   "Transfer learning is useful when you have a small dataset for your target task but can start from a model pretrained on a large, related dataset — reusing its learned features avoids training from scratch and generally improves performance with less data.",
+    },
+    {
+        # data/processed/week-05-TIL.md, Day 4 — Transformer masking 섹션 원문 기반.
+        "question": "이 프로젝트의 학습 노트에 따르면, Transformer의 masking 기법은 무엇을 하는 기술이야?",
+        "answer":   "Masking은 Attention이 보면 안 되는 위치를 가리는 기법이다.",
+    },
+    {
+        # data/processed/week-08-TIL.md 요약 원문 기반.
+        "question": "학습 노트에 따르면 LangGraph의 Checkpointer는 어떤 것을 가능하게 해줘?",
+        "answer":   "Checkpointer는 그래프 실행을 멈췄다가 이어갈 수 있게 해주는 영속성(durable execution)을 확보해준다.",
+    },
 ]
 print(f"검증 질문 수: {len(EVAL_QUESTIONS)}")
 
-# Dataset 생성 or 재사용
+# Dataset 생성 or 재사용. 재사용일 땐 기존 예제엔 없는 질문만 추가한다 — 처음엔 EVAL_QUESTIONS를
+# 한 번만 밀어넣고 끝이라 재실행해도 새로 추가한 문항이 조용히 누락됐었다(TIL 문항 2개 추가하며 발견).
 existing = [d for d in client.list_datasets(dataset_name=DATASET_NAME)]
 if existing:
     dataset = existing[0]
-    print(f"기존 Dataset 사용: {dataset.id}")
+    known_questions = {
+        ex.inputs.get("question") for ex in client.list_examples(dataset_id=dataset.id)
+    }
+    new_qs = [ex for ex in EVAL_QUESTIONS if ex["question"] not in known_questions]
+    if new_qs:
+        client.create_examples(
+            dataset_id=dataset.id,
+            inputs=[{"question": ex["question"]} for ex in new_qs],
+            outputs=[{"answer": ex["answer"]} for ex in new_qs],
+        )
+    print(f"기존 Dataset 사용: {dataset.id} (신규 {len(new_qs)}건 추가)")
 else:
     dataset = client.create_dataset(
         dataset_name=DATASET_NAME,
@@ -72,8 +105,9 @@ def target(inputs):
     return {"answer": result["answer"], "sources": result["sources"]}
 
 
-# 휴리스틱: 기대 답변의 핵심 내용어(4자↑, 불용어 제외) 회수율(0~1).
-# (영문 토큰 기준 — 한글 평가 문항을 추가하면 토큰화 보강 필요)
+# 휴리스틱: 기대 답변의 핵심 내용어(영문 4자↑ 또는 한글 2자↑, 불용어 제외) 회수율(0~1).
+# 한글 토큰(가-힣 2자↑)을 추가한 이유: TIL 노트 기반 한글 평가 문항을 넣으면서, 원래
+# 영문 전용 정규식이 한글 답변에서 키워드를 하나도 못 뽑아 항상 score=0으로 떨어졌음.
 _STOPWORDS = {
     "that", "this", "with", "from", "into", "each", "then", "than", "when",
     "what", "which", "while", "these", "those", "their", "them", "they",
@@ -85,7 +119,7 @@ _STOPWORDS = {
 def keyword_recall(run, example):
     pred = run.outputs.get("answer", "").lower()
     expected = example.outputs.get("answer", "").lower()
-    keywords = {w for w in re.findall(r"[a-z]{4,}", expected) if w not in _STOPWORDS}
+    keywords = {w for w in re.findall(r"[a-z]{4,}|[가-힣]{2,}", expected) if w not in _STOPWORDS}
     if not keywords:
         return {"key": "keyword_recall", "score": 0, "comment": "기대 답변에 키워드 없음"}
     hit = {w for w in keywords if w in pred}
@@ -110,7 +144,8 @@ JUDGE_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 judge_llm = ChatGoogleGenerativeAI(
-    model=os.getenv("JUDGE_MODEL", "gemini-3.5-flash"),
+    # 판정 모델은 생성 모델(GOOGLE_MODEL)과 분리 — self-bias 최소화(1sanguk 교훈).
+    model=os.getenv("GOOGLE_EVAL_MODEL", "gemini-3.5-flash"),
     google_api_key=os.getenv("GOOGLE_API_KEY"),
     temperature=0,
 )
@@ -143,7 +178,10 @@ def llm_judge(run, example):
     try:
         score = float(first_line)
     except ValueError:
-        score = 0
+        # 파싱 실패는 "0점(완전 오답)"이 아니라 "판정 불가"다 — 0으로 떨어뜨리면 평균이
+        # 거짓으로 낮아진다(SWHee/SungjinWi99도 이 구분을 지킨다). None으로 두고 원문을 남긴다.
+        return {"key": "llm_judge_semantic_match", "score": None,
+                "comment": f"judge 응답 파싱 실패(첫 줄이 숫자가 아님): {reply!r}"}
     return {"key": "llm_judge_semantic_match", "score": score, "comment": reply}
 
 
@@ -159,7 +197,9 @@ def answer_relevancy(run, example):
     try:
         score = float(first_line)
     except ValueError:
-        score = 0
+        # llm_judge와 같은 이유로 0이 아니라 None — 파싱 실패는 "판정 불가"지 "오답"이 아니다.
+        return {"key": "answer_relevancy", "score": None,
+                "comment": f"judge 응답 파싱 실패(첫 줄이 숫자가 아님): {reply!r}"}
     return {"key": "answer_relevancy", "score": score, "comment": reply}
 
 

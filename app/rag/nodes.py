@@ -2,7 +2,7 @@ import logging
 
 from langgraph.graph import MessagesState
 from langchain_core.messages import AIMessage, SystemMessage
-from app.rag.chain import _extract_sources, TOP_K, RELEVANCE_THRESHOLD, study_turn
+from app.rag.chain import _extract_sources, apply_fallback, TOP_K, RELEVANCE_THRESHOLD, study_turn
 from app.rag.state import GraphState, StudySessionState
 from app.rag.study_session import apply_verdict, flatten_conversation, serialize_for_daily_note
 from app.writer.writer import save_raw_session, write_daily_note
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def make_agent_node(llm, tools, system_prompt):
-    llm_with_tools = llm.bind_tools(tools)
+    llm_with_tools = apply_fallback(llm, lambda m: m.bind_tools(tools))
 
     def agent_node(state: MessagesState):
         messages = [SystemMessage(content=system_prompt)] + state["messages"]
@@ -22,6 +22,7 @@ def make_agent_node(llm, tools, system_prompt):
 
 
 def make_nodes(vectorstore, prompt, rewrite_prompt, llm):
+    llm = apply_fallback(llm)  # generate/rewrite의 .invoke가 429 시 fallback 타게
     def retrieve_node(state: GraphState):
         rewritten_question = state.get("rewritten_question", "")
         if rewritten_question:
