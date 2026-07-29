@@ -1,7 +1,12 @@
+import logging
+import time
+
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage
 
 from app.schemas.rag import ConverseResponse, SavedDocument, ThreadHistoryResponse, ThreadMessage
+
+logger = logging.getLogger(__name__)
 
 
 def _new_slice(before: dict, after: dict, key: str) -> list:
@@ -12,10 +17,13 @@ def converse(agent_graph, message: str, thread_id: str) -> ConverseResponse:
     config = {"configurable": {"thread_id": thread_id}}
     before = agent_graph.get_state(config).values
 
+    start = time.perf_counter()
     try:
         after = agent_graph.invoke({"messages": [("human", message)]}, config=config)
     except Exception as exc:  # LLM 호출 실패 등
         raise HTTPException(status_code=500, detail=f"Agent 실행 실패: {exc}") from exc
+    finally:
+        logger.info("converse thread_id=%s elapsed_ms=%.0f", thread_id, (time.perf_counter() - start) * 1000)
 
     tools_used = [
         call["name"]
