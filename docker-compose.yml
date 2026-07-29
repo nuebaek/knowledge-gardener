@@ -1,0 +1,25 @@
+services:
+  chroma:
+    image: chromadb/chroma:latest
+    volumes:
+      - chroma_server_data:/data
+    ports:
+      - "8000:8000"
+
+  app:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - CHROMA_MODE=server
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8080:8080"
+    depends_on:
+      - chroma
+
+volumes:
+  chroma_server_data:
