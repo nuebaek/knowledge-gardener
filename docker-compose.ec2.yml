@@ -1,0 +1,26 @@
+services:
+  chroma:
+    image: chromadb/chroma:latest
+    volumes:
+      - chroma_server_data:/data
+    ports:
+      - "8000:8000"
+
+  app:
+    image: nuebaek/knowledge-gardener:latest
+    env_file:
+      - .env
+    environment:
+      - CHROMA_MODE=server
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
+    volumes:
+      - ./data:/app/data
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    ports:
+      - "8080:8080"
+    depends_on:
+      - chroma
+
+volumes:
+  chroma_server_data:
