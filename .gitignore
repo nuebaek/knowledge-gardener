@@ -15,7 +15,10 @@ wheels/
 chroma_data/
 
 # Raw dataset (third-party content, not redistributable)
-data/
+# NOTE: negating a file inside an ignored dir doesn't work if the dir itself
+# is ignored (git won't descend to check it) — must un-ignore each level.
+data/*
+!data/processed
 
 .claude/
 
