@@ -163,5 +163,6 @@ def search_documents(query: str, limit: int = 20) -> SearchResponse:
                     match_end=match_end,
                 )
             )
+            break  # 문서당 첫 매치 하나만 — 안 그러면 문단마다 같은 문서가 중복으로 뜬다
 
     return SearchResponse(query=q, hits=hits)
