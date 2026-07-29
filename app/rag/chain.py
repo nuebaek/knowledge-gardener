@@ -4,6 +4,7 @@ from functools import lru_cache
 import chromadb
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
+from langchain_core.language_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableParallel, RunnablePassthrough
@@ -26,7 +27,7 @@ RELEVANCE_THRESHOLD = 0.4
 def study_turn(llm, topic, next_topic, message, conversation) -> TurnResult:
     """인출 세션 한 턴을 LLM 한 번으로 처리한다 — 현재 답변 판정 + 다음 질문 생성.
     next_topic이 없으면(마지막 토픽) "none"을 넘겨 next_question을 null로 받는다."""
-    turn = llm.with_structured_output(TurnResult)
+    turn = apply_fallback(llm, lambda m: m.with_structured_output(TurnResult))
     messages = TURN_PROMPT.invoke({
         "topic": topic,
         "next_topic": next_topic or "none",
@@ -196,6 +197,31 @@ def build_llm():
     )
 
 
+@lru_cache(maxsize=1)
+def build_fallback_llm():
+    """primary(build_llm) 실패 시 넘어갈 fallback. with_fallbacks는 호출마다 primary를 먼저
+    시도하므로, rate limit(429)이 풀리면 다음 호출에서 자동으로 primary로 복귀한다 — 별도
+    복귀 로직이 필요 없다. primary가 이미 google이거나 LLM_FALLBACK_MODEL이 비면 폴백 없음."""
+    model = os.getenv("LLM_FALLBACK_MODEL", "gemini-3.5-flash")
+    if not model or os.getenv("LLM_PROVIDER", "cerebras").lower() == "google":
+        return None
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    return ChatGoogleGenerativeAI(model=model, google_api_key=os.getenv("GOOGLE_API_KEY"))
+
+
+def apply_fallback(model, configure=lambda m: m):
+    """진짜 ChatModel에만 primary→fallback 체인을 씌운다. configure는 bind_tools /
+    with_structured_output 같은 재가공을 primary·fallback에 똑같이 적용하는 함수
+    (with_fallbacks가 반환하는 러너블엔 그 메서드가 없어서, 감싸기 전에 각각 적용해야 한다).
+    테스트가 주입하는 fake/mock은 BaseChatModel이 아니므로 그대로 통과 — 폴백 안 걸린다."""
+    if not isinstance(model, BaseChatModel):
+        return configure(model)
+    fb = build_fallback_llm()
+    if fb is None:
+        return configure(model)
+    return configure(model).with_fallbacks([configure(fb)])
+
+
 # ---------------- 프롬프트 & 체인 조립 ----------------
 
 PROMPT = ChatPromptTemplate.from_messages([
@@ -311,7 +337,7 @@ def generate_recall_question(llm, topic: str, conversation: str) -> str:
     messages = RECALL_QUESTION_PROMPT.invoke(
         {"conversation": conversation, "topic": topic}
     ).to_messages()
-    return llm.invoke(messages).content
+    return apply_fallback(llm).invoke(messages).content
 
 
 AGENT_SYSTEM_PROMPT = (
@@ -356,7 +382,7 @@ def build_rag_chain():
     """인덱싱(필요 시) + LCEL 체인 구성. invoke(question) → {answer, sources}."""
     embeddings = build_embeddings()
     retriever = get_retriever(embeddings)
-    llm = build_llm()
+    llm = apply_fallback(build_llm())
 
     # 검색을 1회만 수행해 답변 생성과 출처 추출이 같은 docs를 공유
     retrieve = RunnableParallel(docs=retriever, question=RunnablePassthrough())
