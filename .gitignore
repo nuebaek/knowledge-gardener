@@ -36,3 +36,6 @@ tests/*.html
 
 # interface-design 스킬의 로컬 스냅샷/시스템 메모 — 도구 산출물, 레포엔 안 실음
 .interface-design/
+
+.pytest_cache/
+.ruff_cache/

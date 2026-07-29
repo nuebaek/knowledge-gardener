@@ -1,13 +1,16 @@
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel
 
 
-class AskRequest(BaseModel):
-    question: str = Field(min_length=1, description="user query")
+class TopicList(BaseModel):
+    topics: list[str]
 
 
-class AskResponse(BaseModel):
-    answer: str
-    sources: list[str]
+class TurnResult(BaseModel):
+    verdict: Literal["explained", "partial", "skip"]
+    stay_on_topic: bool = False        # True=같은 토픽 더 파고들기, False=다음 토픽/종료
+    next_question: str | None = None   # 위 판단에 맞는 질문. 세션 종료 시 None
 
 
 class ConverseRequest(BaseModel):

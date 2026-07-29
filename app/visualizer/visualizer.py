@@ -1,7 +1,8 @@
+from functools import lru_cache
+
 from langchain_core.prompts import ChatPromptTemplate
 from app.rag.chain import build_llm
 
-from pathlib import Path
 from app.services import corpus_service
 
 
@@ -30,7 +31,9 @@ MINDMAP_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
-llm = build_llm()
+@lru_cache(maxsize=1)
+def _llm():
+    return build_llm()
 
 
 def generate_mindmap_plaintext(documents: list[str]) -> str:
@@ -39,54 +42,12 @@ def generate_mindmap_plaintext(documents: list[str]) -> str:
         "doc_count": len(documents),
         "documents": united_document,
     }).to_messages()
-    return llm.invoke(messages).content
+    return _llm().invoke(messages).content
 
 
-# def save_mindmap_html(plaintext: str, out_path: str = "mindmap_output_ff3.html") -> str:
-#     html = f"""<!DOCTYPE html>
-# <html>
-# <head>
-#   <meta charset="utf-8"><title>mindmap</title>
-#   <style>
-#     body {{ margin: 0; }}
-#     #map {{ width: 100vw; height: 100vh; }}
-#   </style>
-# </head>
-# <body>
-#   <div id="map"></div>
-
-#   <script type="module">
-#     import MindElixir from "https://cdn.jsdelivr.net/npm/mind-elixir/dist/MindElixir.js";
-#     import {{ plaintextToMindElixir }} from "https://cdn.jsdelivr.net/npm/mind-elixir/dist/PlaintextConverter.js";
-
-#     const plaintext = {json.dumps(plaintext)};
-#     const data = plaintextToMindElixir(plaintext);
-
-#     const mind = new MindElixir({{ el: "#map", direction: MindElixir.RIGHT }});
-#     mind.init(data);
-#   </script>
-#   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mind-elixir/dist/MindElixir.css">
-# </body>
-# </html>
-# """
-#     Path(out_path).write_text(html, encoding="utf-8")
-#     return str(Path(out_path).resolve())
-
-
-# mindmap
-def visualize_mindmap_img(documents: list[str]):
+def visualize_mindmap_text(documents: list[str]):
     if not documents:
         return "해당하는 문서를 찾지 못했어요."
 
-    # 문서를 하나로 뭉쳐준다
-    texts = []
-    for d in documents:
-        texts.append(corpus_service.get_document(d).content)
-
-    # 뭉친 언어 기반 html mindmap 생성한다
-    plaintext = generate_mindmap_plaintext(texts)
-
-    # output: 보여준다?
-    # save_mindmap_html(plaintext)
-
-    return plaintext
+    texts = [corpus_service.get_document(d).content for d in documents]
+    return generate_mindmap_plaintext(texts)

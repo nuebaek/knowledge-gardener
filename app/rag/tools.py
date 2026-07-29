@@ -1,13 +1,50 @@
-from langchain_core.tools import tool
-from app.rag.graph import build_rag_graph
-from app.writer.writer import write_daily_note, write_weekly_note, write_tilnote
-from app.visualizer.visualizer import visualize_mindmap_img
+from datetime import date
+from typing import Annotated
+
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import tool, InjectedToolCallId
+from langgraph.prebuilt import InjectedState
+from langgraph.types import Command
 
 from app.core import catalog
-from datetime import date
+from app.rag.chain import build_llm, TOPIC_EXTRACT_PROMPT, generate_recall_question
+from app.rag.graph import build_rag_graph
+from app.rag.study_session import flatten_conversation, new_session
+from app.schemas.rag import TopicList
+from app.visualizer.visualizer import visualize_mindmap_text
+from app.writer.writer import write_weekly_note, write_tilnote
 
-def make_tools():
-    qa_graph = build_rag_graph()
+MINDMAP_MAX_DOCS = 10  # 한 프롬프트에 붓는 문서 수 상한 
+
+
+def _saved(path, doc_type: str) -> dict:
+    return {"type": doc_type, "file_name": path.name}
+
+
+def _match_documents(query: str | None) -> list[str]:
+    if isinstance(query, str) and query.strip():
+        needle = query.lower()
+        return [
+            row["source_path"]
+            for row in catalog.list_documents()
+            if needle in row["source_path"].lower() or needle in row["title"].lower()
+        ]
+
+    # query 없으면 "오늘" — dailynote/til 중 오늘 created_at인 것만
+    today = date.today().isoformat()
+    return [
+        row["source_path"]
+        for doc_type in ("dailynote", "til")
+        for row in catalog.list_documents(doc_type=doc_type)
+        if row["created_at"].startswith(today)
+    ]
+
+
+def make_tools(llm=None, qa_graph=None):
+    """llm/qa_graph 주입 — 테스트가 임베딩·벡터스토어 없이 툴 표면을 검사할 수 있게."""
+    llm = llm if llm is not None else build_llm()
+    qa_graph = qa_graph if qa_graph is not None else build_rag_graph()
+    topic_extractor = llm.with_structured_output(TopicList)
 
     @tool(parse_docstring=True)
     def answer_question(question: str) -> str:
@@ -25,33 +62,46 @@ def make_tools():
         sources = ", ".join(result.get("sources", [])) or "없음"
         return f"{result['answer']}\n\n(출처: {sources})"
 
-    @tool(parse_docstring=True)
-    def write_daily(topic: str, learned: str, related_concepts: list[str] | str | None = None) -> str:
-        """Write and save a structured daily learning note about what the user studied today.
+    @tool
+    def write_daily(
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """Start a retrieval-practice session for what the user studied today.
+
         Use this when the user wants to record, organize, or write down what they learned in
         a study or lecture session today — e.g. "오늘 공부한 거 정리해줘", "write today's notes",
         or any description of what was studied today.
         Do NOT use this to answer questions or explain a concept — use `answer_question` for that.
         Do NOT use this for retrospectives about a project or task — use `write_til` for that.
 
-        Extract every value only from what the user explicitly said in this conversation.
-        Never invent, infer, or add a topic or concept the user did not actually mention.
-
-        Args:
-            topic: The main subject studied, as stated by the user.
-            learned: The user's own explanations collected during the retrieval conversation,
-                concatenated verbatim — including explicit notes on what the user could not yet
-                explain. Do not summarize, rewrite, or complete them before passing.
-            related_concepts: Specific terms or concepts the user explicitly named or explained,
-                as a list of strings. Leave empty if none were mentioned — do not add concepts
-                on your own.
+        Call this once to start. Do NOT summarize the material yourself — the session asks the
+        user to explain each topic in their own words.
         """
-        if isinstance(related_concepts, str):
-            related_concepts = [c.strip() for c in related_concepts.split(",") if c.strip()]
-        return write_daily_note(topic, learned, related_concepts)
+        conversation = flatten_conversation(state["messages"])
+        messages = TOPIC_EXTRACT_PROMPT.invoke({"conversation": conversation}).to_messages()
+        topics = topic_extractor.invoke(messages)
+        session = new_session(topics.topics)
+
+        if not session["pending"]:
+            return Command(update={"messages": [
+                ToolMessage("오늘 정리할 학습 주제를 찾지 못했어요. 뭘 공부했는지 조금 더 말해줄래요?",
+                            tool_call_id=tool_call_id),
+            ]})
+
+        question = generate_recall_question(llm, session["pending"][0], conversation)
+        return Command(update={
+            "pending": session["pending"],
+            "answered": session["answered"],
+            "seedlings": session["seedlings"],
+            "messages": [ToolMessage(question, tool_call_id=tool_call_id)],
+        })
 
     @tool(parse_docstring=True)
-    def write_weekly(as_of: str | None = None) -> str:
+    def write_weekly(
+        tool_call_id: Annotated[str, InjectedToolCallId],
+        as_of: str | None = None,
+    ) -> Command:
         """Synthesize this week's daily notes (Monday through today) into one weekly summary and save it.
 
         Use this when the user wants a weekly review or summary of what they studied this week —
@@ -63,17 +113,27 @@ def make_tools():
                 Only set this if the user explicitly names a different week; otherwise omit it
                 and let it default to today.
         """
-        return write_weekly_note(as_of)
-    
+        path = write_weekly_note(as_of)
+        if path is None:
+            return Command(update={"messages": [
+                ToolMessage("이번 주에 저장된 데일리노트가 없어서 주간노트를 만들지 못했어요.",
+                            tool_call_id=tool_call_id),
+            ]})
+        return Command(update={
+            "saved_documents": [_saved(path, "weeklynote")],
+            "messages": [ToolMessage(f"주간노트 저장 완료: {path.name}", tool_call_id=tool_call_id)],
+        })
+
     @tool(parse_docstring=True)
     def write_til(
+        tool_call_id: Annotated[str, InjectedToolCallId],
         what: str,
         learned: str,
         troubleshooting: str,
         reflection: str,
         actionplan: str,
         keywords: list[str] | str | None = None,
-    ) -> str:
+    ) -> Command:
         """Write and save a TIL-style (Today I Learned) retrospective note.
 
         Use this when the user wants to record a retrospective, reflection, or "what I learned
@@ -93,10 +153,17 @@ def make_tools():
         """
         if isinstance(keywords, str):
             keywords = [c.strip() for c in keywords.split(",") if c.strip()]
-        return write_tilnote(what, learned, troubleshooting, reflection, actionplan, keywords or [])
+        path = write_tilnote(what, learned, troubleshooting, reflection, actionplan, keywords or [])
+        return Command(update={
+            "saved_documents": [_saved(path, "til")],
+            "messages": [ToolMessage(f"TIL 저장 완료: {path.name}", tool_call_id=tool_call_id)],
+        })
 
     @tool(parse_docstring=True)
-    def visualize_mindmap(query: str | None = None) -> str:
+    def visualize_mindmap(
+        tool_call_id: Annotated[str, InjectedToolCallId],
+        query: str | None = None,
+    ) -> Command:
         """Generate a mindmap recap of the user's study notes and return its plaintext for display.
 
         Use this when the user wants a visual recap/mindmap of what they've studied — e.g.
@@ -108,21 +175,21 @@ def make_tools():
                 or a topic keyword. Leave this empty when the user just says "오늘"/"today" with no
                 specific document named — it then defaults to today's daily notes.
         """
-        documents = []
-        if isinstance(query, str) and query.strip():
-        # 파일명/제목에 query가 들어간 문서를 doc_type 무관하게 찾는다            
-            rows = catalog.list_documents()
-            for row in rows:
-                if query.lower() in row["source_path"].lower() or query.lower() in row["title"].lower():
-                    documents.append(row["source_path"])
-        else:
-            # query 없으면 "오늘" — dailynote/til 중 오늘 created_at인 것만
-            today = date.today().isoformat()
-            for dt in ("dailynote", "til"):
-                for row in catalog.list_documents(doc_type=dt):
-                    if row["created_at"].startswith(today):
-                        documents.append(row["source_path"])
+        documents = _match_documents(query)
+        if not documents:
+            return Command(update={"messages": [
+                ToolMessage("해당하는 문서를 찾지 못했어요.", tool_call_id=tool_call_id),
+            ]})
 
-        return visualize_mindmap_img(documents)
+        truncated = len(documents) > MINDMAP_MAX_DOCS
+        documents = documents[:MINDMAP_MAX_DOCS]
+        plaintext = visualize_mindmap_text(documents)
+        note = f" (조건에 맞는 문서가 많아 {MINDMAP_MAX_DOCS}건만 사용)" if truncated else ""
+
+        return Command(update={
+            "mindmaps": [plaintext],
+            "messages": [ToolMessage(f"마인드맵 생성 완료 ({len(documents)}건){note}",
+                                     tool_call_id=tool_call_id)],
+        })
 
     return [answer_question, write_daily, write_weekly, write_til, visualize_mindmap]
