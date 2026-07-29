@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 
 import chromadb
 from dotenv import load_dotenv
@@ -6,8 +7,6 @@ from langchain_chroma import Chroma
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableParallel, RunnablePassthrough
-from langchain_cerebras import ChatCerebras
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
@@ -15,6 +14,7 @@ from langchain_text_splitters import (
 
 from app.core import catalog
 from app.core.paths import CHROMA_DIR, PROJECT_ROOT
+from app.schemas.rag import TurnResult
 
 load_dotenv()
 
@@ -23,9 +23,24 @@ TOP_K = 5
 RELEVANCE_THRESHOLD = 0.4
 
 
+def study_turn(llm, topic, next_topic, message, conversation) -> TurnResult:
+    """인출 세션 한 턴을 LLM 한 번으로 처리한다 — 현재 답변 판정 + 다음 질문 생성.
+    next_topic이 없으면(마지막 토픽) "none"을 넘겨 next_question을 null로 받는다."""
+    turn = llm.with_structured_output(TurnResult)
+    messages = TURN_PROMPT.invoke({
+        "topic": topic,
+        "next_topic": next_topic or "none",
+        "message": message,
+        "conversation": conversation,
+    }).to_messages()
+    return turn.invoke(messages)
+
 # ---------------- 임베딩 & 벡터스토어 ----------------
 
+@lru_cache(maxsize=1)
 def build_embeddings():
+    from langchain_huggingface import HuggingFaceEmbeddings
+
     return HuggingFaceEmbeddings(
         model_name="BAAI/bge-m3",
         model_kwargs={"device": "cuda" if os.getenv("USE_CUDA", "false").lower() == "true" else "cpu"},
@@ -140,10 +155,24 @@ def get_retriever(embeddings, k: int = TOP_K):
     return get_vectorstore(embeddings).as_retriever(search_kwargs={"k": k})
 
 
+def search_source_paths(query: str, k: int = TOP_K) -> list[str]:
+    """query와 관련된 코퍼스 문서의 경로만 돌려준다(생성 없이 검색만) — 🌱 토픽에 근거 위치를
+    붙일 때 쓴다. qa_graph(풀 RAG)는 seedling마다 LLM 생성까지 돌아 낭비라 안 쓴다."""
+    vectorstore = get_vectorstore(build_embeddings())
+    docs = vectorstore.similarity_search(query, k=k)
+    return _extract_sources(docs)
+
+
 # ---------------- LLM ----------------
 
+@lru_cache(maxsize=1)
 def build_llm():
-    # 생성 LLM만 provider를 고른다(LLM_PROVIDER).
+    """생성 LLM만 provider를 고른다(LLM_PROVIDER).
+
+    lru_cache를 건 이유: writer·visualizer·tools가 각자 build_llm()을 부르면서 같은 설정의
+    클라이언트를 여러 벌 만들고 있었다. provider 설정은 프로세스 수명 동안 안 바뀌므로 한 벌만
+    만든다(테스트에서 다른 LLM이 필요하면 build_agent_graph/make_tools에 주입한다).
+    """
     provider = os.getenv("LLM_PROVIDER", "cerebras").lower()
     if provider == "ollama":
         from langchain_ollama import ChatOllama
@@ -157,9 +186,13 @@ def build_llm():
             model=os.getenv("GOOGLE_MODEL", "gemini-2.5-flash"),
             google_api_key=os.getenv("GOOGLE_API_KEY"),
         )
+    from langchain_cerebras import ChatCerebras
     return ChatCerebras(
         model=os.getenv("CEREBRAS_MODEL", "gemma-4-31b"),
         api_key=os.getenv("CEREBRAS_API_KEY"),
+        # Cerebras 기본 max_retries=None(재시도 없음) — rate limit(429)이 종종 나서 낮게 균일화.
+        # langchain 표준 exponential backoff. 값을 낮게 둬 인터랙티브 호출 대기도 짧게 유지.
+        max_retries=2,
     )
 
 
@@ -198,38 +231,103 @@ REWRITE_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
+TOPIC_EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "Extract the distinct study topics or concepts the user says they covered today, from the "
+     "conversation below. List each topic once, using the user's own wording — do not rename or "
+     "generalize it into different terminology. Do not explain any topic."),
+    ("human", "{conversation}"),
+])
+
+
+TURN_PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "You are running a Korean-language retrieval-practice (인출 학습) study session. The user "
+     "just tried to explain `{topic}` in their own words. Do TWO independent jobs and return them "
+     "in the TurnResult schema.\n\n"
+     "## JOB 1 — verdict (judge STANCE, never correctness)\n"
+     "Classify the user's message into exactly one label. You NEVER judge whether the explanation "
+     "is factually right — only the user's own expressed confidence.\n"
+     "- \"explained\": a genuine, self-assured explanation in their own words.\n"
+     "- \"partial\": they attempted an explanation but signaled THEIR OWN uncertainty — hedging "
+     "(\"~인 것 같은데\", \"아마\", \"맞나?\"), trailing off, or saying part is unclear. The content "
+     "may even be fully correct; what matters is that THEY are unsure.\n"
+     "- \"skip\": declined or said they don't know, with no real attempt (\"모르겠어\", \"넘어가\", "
+     "\"패스\", \"몰라\").\n\n"
+     "## JOB 2 — stay_on_topic + next_question\n"
+     "Check whether the user's message only NAMES a sub-point without truly explaining it — "
+     "mentions a term or a split into parts but doesn't elaborate on any of them, glosses over "
+     "the reasoning, or never says how it's actually used.\n\n"
+     "This check is MANDATORY every single time, with NO exception for the last topic. Whether "
+     "next_topic is a real topic or \"none\" has NO bearing on whether you run this check — "
+     "decide shallow-vs-thorough first, from the content of the message ALONE. Being the last "
+     "topic is never a reason to skip it or wrap up early. This pattern applies to ANY subject, "
+     "not just technical ones.\n\n"
+     "Example: user says \"광합성은 명반응이랑 암반응으로 나뉘어\" and stops there → shallow, "
+     "stay_on_topic=true, ask a follow-up about what each reaction actually does. If they go on "
+     "to also explain what happens in the 명반응 and what happens in the 암반응 → already "
+     "thorough, stay_on_topic=false, move on.\n\n"
+     "- If shallow: set stay_on_topic to true, and ask ONE follow-up question using exactly ONE "
+     "of these three angles — whichever fits what was actually left unexplained:\n"
+     "  1. Clarification: a question that pins down exactly what the mentioned part means or "
+     "does.\n"
+     "  2. Reasoning: a question asking why it works that way, or why it's needed.\n"
+     "  3. Application: a question asking how it's actually used, or how it connects to another "
+     "concept.\n"
+     "  HARD CONSTRAINT: build the follow-up ONLY from words, terms, or facts the user has "
+     "already said themselves earlier in this conversation. NEVER introduce a new term, a new "
+     "comparison, or any fact the user has not already stated — doing so both pushes the "
+     "difficulty past what they've shown they know, and can leak the answer through the "
+     "question's own premise.\n"
+     "- Otherwise (already thorough): set stay_on_topic to false.\n"
+     "  - If next_topic is a real topic: write exactly ONE short, natural Korean question asking "
+     "the user to explain `{next_topic}` in their own words.\n"
+     "  - If next_topic is \"none\": the session is ending — set next_question to null. Do NOT "
+     "invent a question.\n\n"
+     "CRITICAL (applies to any question, whichever branch): NEVER explain, define, hint at, or "
+     "reveal any part of the answer — the user must recall it themselves. Match the tone and "
+     "flow of the conversation so far; vary your wording every time, never reuse a fixed "
+     "template."),
+    ("human",
+     "next_topic: {next_topic}\n\nConversation so far:\n{conversation}\n\n"
+     "User's message about `{topic}`: {message}"),
+])
+
+
+RECALL_QUESTION_PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "You are running a retrieval-practice (인출 학습) study session. Ask the user to explain "
+     "the given topic in their OWN words. Write ONE short, natural question that fits the tone "
+     "and flow of the conversation so far — vary your wording, never reuse a fixed template. "
+     "Output only the question, nothing else. "
+     "CRITICAL: never explain, define, hint at, or reveal any part of the answer — the whole "
+     "point is that the user recalls it themselves."),
+    ("human", "Conversation so far:\n{conversation}\n\nAsk about this topic: {topic}"),
+])
+
+
+def generate_recall_question(llm, topic: str, conversation: str) -> str:
+    """RECALL_QUESTION_PROMPT로 대화 맥락에 맞는 인출 질문을 생성. study_node·write_daily가 공유."""
+    messages = RECALL_QUESTION_PROMPT.invoke(
+        {"conversation": conversation, "topic": topic}
+    ).to_messages()
+    return llm.invoke(messages).content
+
+
 AGENT_SYSTEM_PROMPT = (
-    "You are a study-assistant agent. You have four tools: `answer_question`, `write_daily`, "
-    "`write_weekly`, and `write_til`. Each tool's own description explains exactly when to use "
-    "it and what fields it needs — rely on those, not on this summary, to decide.\n\n"
-    "MUST: whenever the user asks a question, requests an explanation, or asks what "
-    "something is or how it works, call `answer_question`. Never answer such questions "
-    "from your own knowledge, even if you are confident you know the answer.\n\n"
-    "MUST: whenever the user wants to record a retrospective, call `write_til` or `write_weekly` "
-    "as appropriate. Never invent field values the user did not state — if a required field is "
-    "missing, ask the user for it instead of guessing.\n\n"
-    "When you detect that the user wants to record today's study session (회고형 발화), do NOT "
-    "call `write_daily` immediately. Follow this retrieval-first flow:\n\n"
-    "1. From what the user said (or from any study material / memo they pasted), list the "
-    "distinct keywords or topics covered today and show the list. Do not explain any of them.\n"
-    "2. For each topic, ask the user to explain it in their own words (\"이건 네 말로 설명하면 "
-    "뭐야?\"). Ask at most 1 follow-up question per topic by default, 2 at the absolute maximum "
-    "(e.g. \"왜 그렇게 동작해?\", \"언제 쓰는 거야?\"). Never exceed 2.\n"
-    "3. If the user says they don't know, or says to skip (\"모르겠어\", \"넘어가\", \"이건 됐어\"), "
-    "move on immediately and remember that this topic was NOT explained — it must appear in the "
-    "note as a `🌱 다시 꺼내볼 것` item. Never explain it yourself and never fill it from the "
-    "material.\n"
-    "4. If the user pasted study material, you may use it only to (a) build the topic list and "
-    "(b) point out a mismatch when the user's explanation contradicts it (\"자료엔 다르게 돼 있는데 "
-    "다시 볼래?\"). Never read the material's content out as the explanation.\n"
-    "5. When all topics are done, or when the user asks to save now, call `write_daily` with "
-    "`learned` set to the user's own explanations concatenated verbatim (including notes on what "
-    "they could not explain), `topic` and `related_concepts` taken only from what was actually "
-    "discussed.\n"
-    "6. Low-friction fallback: if the user signals they want to skip the conversation entirely "
-    "(\"오늘은 그냥 저장만 해줘\", \"인출 없이 저장\"), respect it without pushback — call "
-    "`write_daily` with their raw memo as `learned`. A blurry note saved today beats a perfect "
-    "note never written.\n\n"
+    "You are a study coach. You have five tools: `answer_question`, `write_daily`, "
+    "`write_weekly`, `write_til`, and `visualize_mindmap`. Rely on each tool's own description "
+    "for when to use it.\n\n"
+    "MUST — questions: whenever the user asks what something is or how it works, call "
+    "`answer_question`. Never answer from your own knowledge, even if you are sure.\n\n"
+    "MUST — retrospectives: whenever the user wants a project/task retrospective, call "
+    "`write_til` (or `write_weekly` for a weekly summary). Never invent field values — if a "
+    "required field is missing, ask the user for it.\n\n"
+    "MUST — daily study: whenever the user wants to record or review what they studied today "
+    "(회고형 발화, e.g. \"오늘 배운 거 정리해줘\"), call `write_daily` immediately. It starts a "
+    "retrieval-practice (인출 학습) session that asks the user to recall each topic in their own "
+    "words. Do NOT list topics, ask questions, or explain anything yourself — the session "
+    "handles all of that. Your only job here is to call the tool.\n\n"
     "If the user only greets you or makes small talk, respond directly without calling any tool."
 )
 

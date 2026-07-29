@@ -1,4 +1,6 @@
 from datetime import date as _date, timedelta
+from functools import lru_cache
+import json
 import re
 
 import yaml
@@ -150,10 +152,12 @@ TIL_PROMPT = ChatPromptTemplate.from_messages([
 
 
 # ---------------- writer 정의 ----------------
-llm = build_llm()
-
 BASE_DIR = WRITER_DIR
-today = _date.today()
+
+
+@lru_cache(maxsize=1)
+def _llm():
+    return build_llm()
 
 def slugify(text: str, max_len: int = 20) -> str:
     slug = re.sub(r"\s+", "-", text.strip())
@@ -180,8 +184,20 @@ def save_docs(dir, filename, entry, body, title, overwrite: bool = False) -> Pat
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(content, encoding="utf-8")
-    # 저장 시점에 바로 카탈로그에 반영 → 문서함 화면이 다음 새로고침부터 이 문서를 바로 보여줌
+    # 저장 시점에 바로 카탈로그에 반영
     catalog.upsert_document(out_path, source_type="writer", doc_type=dir, title=title)
+    return out_path
+
+
+def save_raw_session(topic: str, learned: str, related_concepts: list[str]) -> Path:
+    """LLM 호출(write_daily_note) 전에 원본을 먼저 저장"""
+    today = _date.today()
+    slug = slugify(topic)
+    out_path = BASE_DIR / "dailynote" / "raw" / f"{today}-{slug}.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {"topic": topic, "learned": learned, "related_concepts": related_concepts}
+    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return out_path
 
 
@@ -190,7 +206,8 @@ def write_daily_note(
         topic: str,
         learned: str,
         related_concepts: list[str] | None
-) -> str:
+) -> Path:
+    today = _date.today()
     entry = DailynoteEntry(
         date=today,
         topic=topic,
@@ -204,16 +221,16 @@ def write_daily_note(
         "learned": learned,
     }).to_messages()
 
-    response = llm.invoke(messages)
+    response = _llm().invoke(messages)
 
     slug = slugify(topic)
-    out_path = save_docs("dailynote", f"{today}-{slug}", entry, response.content, title=topic)
-    return f"저장 완료: {out_path}"
+    return save_docs("dailynote", f"{today}-{slug}", entry, response.content, title=topic)
 
 
 # weekly note
-def write_weekly_note(as_of: str | None = None) -> str:
-    ref_date = _date.fromisoformat(as_of) if as_of else today
+def write_weekly_note(as_of: str | None = None) -> Path | None:
+    """저장된 파일 경로를 반환. 대상 daily note가 한 건도 없으면 아무것도 안 쓰고 None."""
+    ref_date = _date.fromisoformat(as_of) if as_of else _date.today()
     monday = ref_date - timedelta(days=ref_date.weekday())
     sunday = monday + timedelta(days=6)
 
@@ -228,7 +245,7 @@ def write_weekly_note(as_of: str | None = None) -> str:
             week_files.append(p)
 
     if not week_files:
-        return f"{monday}~{sunday} 사이 저장된 daily note가 없음"
+        return None
 
     topics, related_concepts, daily_bodies = [], [], []
     for p in week_files:
@@ -252,11 +269,10 @@ def write_weekly_note(as_of: str | None = None) -> str:
         "daily_notes": "\n\n---\n\n".join(daily_bodies),
     }).to_messages()
 
-    response = llm.invoke(messages)
+    response = _llm().invoke(messages)
 
     title = f"{monday.isoformat()} ~ {sunday.isoformat()} 주간노트"
-    out_path = save_docs("weeklynote", monday.isoformat(), entry, response.content, title=title, overwrite=True)
-    return f"저장 완료: {out_path}"
+    return save_docs("weeklynote", monday.isoformat(), entry, response.content, title=title, overwrite=True)
 
 
 # til
@@ -267,7 +283,8 @@ def write_tilnote(
     reflection: str,
     actionplan: str,
     keywords: list[str],
-) -> str:
+) -> Path:
+    today = _date.today()
     entry = TilEntry(
         date=today,
         what=what,
@@ -287,9 +304,8 @@ def write_tilnote(
         "keywords": keywords,
     }).to_messages()
 
-    response = llm.invoke(messages)
+    response = _llm().invoke(messages)
 
     slug = slugify(what)
     title = what if len(what) <= 60 else f"{what[:60]}…"
-    out_path = save_docs("til", f"{today}-{slug}", entry, response.content, title=title)
-    return f"저장 완료: {out_path}"
+    return save_docs("til", f"{today}-{slug}", entry, response.content, title=title)

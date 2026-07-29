@@ -8,10 +8,11 @@ const submitBtn = document.getElementById("submit-btn");
 const announcer = document.getElementById("announcer");
 const corpusTag = document.getElementById("corpus-tag");
 
-const TOOL_LABELS = {
-  write_daily: "데일리노트",
-  write_weekly: "위클리노트",
-  write_til: "TIL",
+// /converse의 saved_documents.type은 툴 이름이 아니라 저장된 문서 종류다.
+const DOC_TYPE_LABELS = {
+  dailynote: "데일리노트",
+  weeklynote: "위클리노트",
+  til: "TIL",
 };
 
 marked.setOptions({ breaks: true, gfm: true });
@@ -733,9 +734,9 @@ function addPendingTurn() {
 }
 
 function addAgentTurn(data) {
-  // /converse pushes every ToolMessage into saved_documents, including answer_question's —
-  // only entries whose type is an actual writer tool represent a real filed note.
-  const filedDocs = (data.saved_documents || []).filter((doc) => doc.type in TOOL_LABELS);
+  // saved_documents에는 이번 턴에 실제로 파일로 저장된 문서만 들어온다(서버가 상태 채널로
+  // 구조화해 내려줌) — 프론트에서 걸러낼 게 없다.
+  const filedDocs = data.saved_documents || [];
   const hasFiled = filedDocs.length > 0;
   const hasAnswer = Array.isArray(data.tools_used) && data.tools_used.includes("answer_question");
   const hasMindmap = Boolean(data.mindmap_plaintext);
@@ -760,7 +761,7 @@ function addAgentTurn(data) {
       const tab = document.createElement("div");
       tab.className = "filed-tab";
       tab.innerHTML = `<span class="filed-type"></span><span class="filed-name"></span>`;
-      tab.querySelector(".filed-type").textContent = TOOL_LABELS[doc.type] || doc.type;
+      tab.querySelector(".filed-type").textContent = DOC_TYPE_LABELS[doc.type] || doc.type;
       tab.querySelector(".filed-name").textContent = doc.file_name;
       stack.appendChild(tab);
     });
