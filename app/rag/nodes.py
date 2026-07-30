@@ -2,19 +2,27 @@ import logging
 
 from langgraph.graph import MessagesState
 from langchain_core.messages import AIMessage, SystemMessage
-from app.rag.chain import _extract_sources, apply_fallback, TOP_K, RELEVANCE_THRESHOLD, study_turn
+from app.rag.chain import (
+    _extract_sources, apply_fallback, TOP_K, RELEVANCE_THRESHOLD, study_turn,
+    TOPIC_EXTRACT_PROMPT, generate_recall_question,
+)
 from app.rag.state import GraphState, StudySessionState
-from app.rag.study_session import apply_verdict, flatten_conversation, serialize_for_daily_note
+from app.rag.study_session import apply_verdict, flatten_conversation, is_complete, serialize_for_daily_note
+from app.schemas.rag import TopicList
 from app.writer.writer import save_raw_session, write_daily_note
 
 logger = logging.getLogger(__name__)
+
+MAX_CONTEXT_MESSAGES = 20
+
+FINALIZE_CONFIRM_MESSAGE = "수고했어요! 오늘 배운 내용 정리해서 저장할까요? 더 이야기하고 싶은 게 있으면 말해주세요."
 
 
 def make_agent_node(llm, tools, system_prompt):
     llm_with_tools = apply_fallback(llm, lambda m: m.bind_tools(tools))
 
     def agent_node(state: MessagesState):
-        messages = [SystemMessage(content=system_prompt)] + state["messages"]
+        messages = [SystemMessage(content=system_prompt)] + state["messages"][-MAX_CONTEXT_MESSAGES:]
         response = llm_with_tools.invoke(messages)
         return {"messages": [response]}
 
@@ -22,7 +30,8 @@ def make_agent_node(llm, tools, system_prompt):
 
 
 def make_nodes(vectorstore, prompt, rewrite_prompt, llm):
-    llm = apply_fallback(llm)  # generate/rewrite의 .invoke가 429 시 fallback 타게
+    llm = apply_fallback(llm)
+
     def retrieve_node(state: GraphState):
         rewritten_question = state.get("rewritten_question", "")
         if rewritten_question:
@@ -68,7 +77,9 @@ def make_nodes(vectorstore, prompt, rewrite_prompt, llm):
     return retrieve_node, generate_node, grade_docs_node, rewrite_query_node
 
 
-def make_study_node(llm, search_sources):
+def make_study_node(judge_llm, gen_llm, search_sources):
+    topic_extractor = apply_fallback(gen_llm, lambda m: m.with_structured_output(TopicList))
+
     def study_node(state: StudySessionState):
         last_user_msg = state["messages"][-1].content
         pending = state["pending"]
@@ -77,18 +88,15 @@ def make_study_node(llm, search_sources):
         conversation = flatten_conversation(state["messages"])
         prior_explanation = state.get("current_explanation", "")
 
-        result = study_turn(llm, current_topic, next_topic, last_user_msg, conversation)
+        result = study_turn(judge_llm, current_topic, next_topic, last_user_msg, conversation)
         logger.debug(
             "study_turn topic=%r next_topic=%r -> verdict=%s stay_on_topic=%s next_question=%r",
             current_topic, next_topic, result.verdict, result.stay_on_topic, result.next_question,
         )
 
-        # 이번 라운드까지 합친 이 토픽의 전체 설명. stay_on_topic=True로 여러 턴 파고들어도
-        # 첫 라운드 원문이 최종 기록에서 안 사라지게 라운드마다 이어 붙인다("표현 그대로" 원칙).
         full_explanation = f"{prior_explanation}\n{last_user_msg}" if prior_explanation else last_user_msg
 
         if result.stay_on_topic:
-            # 아직 이 토픽이 안 끝났다 — pending/answered/seedlings는 그대로, 버퍼만 갱신.
             out = {"current_explanation": full_explanation}
             if result.next_question:
                 out["messages"] = [AIMessage(result.next_question)]
@@ -99,10 +107,15 @@ def make_study_node(llm, search_sources):
             "pending": new_state["pending"],
             "answered": new_state["answered"],
             "seedlings": new_state["seedlings"],
-            "current_explanation": "",   # 다음 토픽을 위해 리셋
+            "current_explanation": "",
         }
-        if result.next_question:
-            out["messages"] = [AIMessage(result.next_question)]
+        if not is_complete(new_state):
+            if result.next_question:
+                out["messages"] = [AIMessage(result.next_question)]
+            return out
+
+        out["awaiting_finalize"] = True
+        out["messages"] = [AIMessage(FINALIZE_CONFIRM_MESSAGE)]
         return out
 
     def finalize_node(state: StudySessionState):
@@ -117,7 +130,7 @@ def make_study_node(llm, search_sources):
 
         topics = [a["topic"] for a in state["answered"]] + [s["topic"] for s in state["seedlings"]]
         payload = {
-            "topic": ", ".join(topics),
+            "topic": state.get("umbrella") or ", ".join(topics),
             "learned": serialize_for_daily_note(
                 {"answered": state["answered"], "seedlings": enriched_seedlings}
             ),
@@ -128,6 +141,7 @@ def make_study_node(llm, search_sources):
         try:
             path = write_daily_note(**payload)
             return {
+                "awaiting_finalize": False,
                 "saved_documents": [{"type": "dailynote", "file_name": path.name}],
                 "messages": [AIMessage(f"오늘 학습 정리 끝, {path.name}으로 저장했어요")],
             }
@@ -135,11 +149,29 @@ def make_study_node(llm, search_sources):
             logger.exception("write_daily_note 실패 — 원본은 %s에 보존됨", raw_path.name)
 
         return {
+            "awaiting_finalize": False,
             "saved_documents": [{"type": "dailynote_raw", "file_name": raw_path.name}],
             "messages": [AIMessage(
                 f"오늘 답변은 저장했는데({raw_path.name}) 노트 정리에는 실패했어요. "
-                "잠시 후 다시 시도해줄래요?"
+                "잠시 후 다시 시도해주세요"
             )],
         }
 
-    return study_node, finalize_node
+    def confirm_finalize_node(state: StudySessionState):
+        reply = state["messages"][-1].content
+        messages = TOPIC_EXTRACT_PROMPT.invoke({"conversation": reply}).to_messages()
+        topics = topic_extractor.invoke(messages)
+
+        if not topics.topics:
+            return finalize_node(state)
+
+        conversation = flatten_conversation(state["messages"])
+        question = generate_recall_question(gen_llm, topics.topics[0], conversation)
+        return {
+            "pending": topics.topics,
+            "umbrella": state.get("umbrella") or topics.umbrella,
+            "awaiting_finalize": False,
+            "messages": [AIMessage(question)],
+        }
+
+    return study_node, finalize_node, confirm_finalize_node

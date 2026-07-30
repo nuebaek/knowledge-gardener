@@ -1,3 +1,4 @@
+import logging
 import os
 from functools import lru_cache
 
@@ -7,7 +8,7 @@ from langchain_chroma import Chroma
 from langchain_core.language_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableParallel, RunnablePassthrough
+from langchain_core.runnables import RunnableLambda, RunnableParallel, RunnablePassthrough
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
@@ -19,14 +20,14 @@ from app.schemas.rag import TurnResult
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 CHROMA_COLLECTION = "cs231n"
 TOP_K = 5
-RELEVANCE_THRESHOLD = 0.4
+RELEVANCE_THRESHOLD = 0.42
 
 
 def study_turn(llm, topic, next_topic, message, conversation) -> TurnResult:
-    """인출 세션 한 턴을 LLM 한 번으로 처리한다 — 현재 답변 판정 + 다음 질문 생성.
-    next_topic이 없으면(마지막 토픽) "none"을 넘겨 next_question을 null로 받는다."""
     turn = apply_fallback(llm, lambda m: m.with_structured_output(TurnResult))
     messages = TURN_PROMPT.invoke({
         "topic": topic,
@@ -36,7 +37,6 @@ def study_turn(llm, topic, next_topic, message, conversation) -> TurnResult:
     }).to_messages()
     return turn.invoke(messages)
 
-# ---------------- 임베딩 & 벡터스토어 ----------------
 
 @lru_cache(maxsize=1)
 def build_embeddings():
@@ -66,7 +66,6 @@ def build_chroma_client():
 
 
 def _make_splitters():
-    # 1단계: 헤더 기준 분할로 섹션 단위 의미 보존. 2단계: 긴 섹션만 길이 기준으로 추가 분할.
     header_splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
         strip_headers=False,
@@ -76,8 +75,7 @@ def _make_splitters():
 
 
 def _split_path(path, header_splitter, char_splitter) -> list:
-    # source를 절대경로가 아니라 catalog의 source_path(PROJECT_ROOT 기준 상대경로)로 맞춰야
-    # sync_index()의 delete(where={"source": ...})가 같은 문서의 기존 청크를 정확히 찾는다.
+    # source는 sync_index()의 delete(where={"source": ...})와 맞아야 하므로 상대경로 유지.
     source = path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
     sections = header_splitter.split_text(path.read_text(encoding="utf-8"))
     for sec in sections:
@@ -89,11 +87,6 @@ def _split_path(path, header_splitter, char_splitter) -> list:
 
 
 def load_split_docs(rows=None):
-    """rows를 안 주면 카탈로그 전체(초기 구축용), 주면 그 문서들만(증분용) 청킹한다.
-
-    예전엔 data/processed만 훑었어서 writer가 쓴 daily/weekly/til은 답변 생성에서 아예
-    검색이 안 됐다 — catalog가 단일 소스가 된 지금은 doc_type을 안 가리고 다 포함시킨다.
-    """
     header_splitter, char_splitter = _make_splitters()
     if rows is None:
         rows = catalog.list_documents()
@@ -101,13 +94,12 @@ def load_split_docs(rows=None):
     for row in rows:
         path = PROJECT_ROOT / row["source_path"]
         if not path.exists():
-            continue  # 카탈로그엔 있는데 파일이 지워진 경우 — sync_index()와 같은 가드
+            continue
         split_docs.extend(_split_path(path, header_splitter, char_splitter))
     return split_docs
 
 
 def inject_header_context(doc) -> None:
-    # page_content에 헤더 정보를 metadata에서 복원
     m = doc.metadata
     parts = [m.get("h1"), m.get("h2"), m.get("h3")]
     prefix = " > ".join(p for p in parts if p)
@@ -116,14 +108,12 @@ def inject_header_context(doc) -> None:
 
 
 def sync_index(vectorstore) -> int:
-    """catalog에서 indexed_at IS NULL인(새로 생기거나 내용이 바뀐) 문서만 재청킹해서
-    그 문서의 기존 청크만 지우고 새로 넣는다 — 컬렉션 전체를 다시 만들 필요가 없다."""
     header_splitter, char_splitter = _make_splitters()
     pending = catalog.pending_reindex()
     for row in pending:
         path = PROJECT_ROOT / row["source_path"]
         if not path.exists():
-            continue  # 파일이 지워진 케이스는 스코프 아웃
+            continue
         vectorstore.delete(where={"source": row["source_path"]})
         chunks = _split_path(path, header_splitter, char_splitter)
         if chunks:
@@ -157,23 +147,13 @@ def get_retriever(embeddings, k: int = TOP_K):
 
 
 def search_source_paths(query: str, k: int = TOP_K) -> list[str]:
-    """query와 관련된 코퍼스 문서의 경로만 돌려준다(생성 없이 검색만) — 🌱 토픽에 근거 위치를
-    붙일 때 쓴다. qa_graph(풀 RAG)는 seedling마다 LLM 생성까지 돌아 낭비라 안 쓴다."""
     vectorstore = get_vectorstore(build_embeddings())
     docs = vectorstore.similarity_search(query, k=k)
     return _extract_sources(docs)
 
 
-# ---------------- LLM ----------------
-
 @lru_cache(maxsize=1)
 def build_llm():
-    """생성 LLM만 provider를 고른다(LLM_PROVIDER).
-
-    lru_cache를 건 이유: writer·visualizer·tools가 각자 build_llm()을 부르면서 같은 설정의
-    클라이언트를 여러 벌 만들고 있었다. provider 설정은 프로세스 수명 동안 안 바뀌므로 한 벌만
-    만든다(테스트에서 다른 LLM이 필요하면 build_agent_graph/make_tools에 주입한다).
-    """
     provider = os.getenv("LLM_PROVIDER", "cerebras").lower()
     if provider == "ollama":
         from langchain_ollama import ChatOllama
@@ -191,38 +171,55 @@ def build_llm():
     return ChatCerebras(
         model=os.getenv("CEREBRAS_MODEL", "gemma-4-31b"),
         api_key=os.getenv("CEREBRAS_API_KEY"),
-        # Cerebras 기본 max_retries=None(재시도 없음) — rate limit(429)이 종종 나서 낮게 균일화.
-        # langchain 표준 exponential backoff. 값을 낮게 둬 인터랙티브 호출 대기도 짧게 유지.
-        max_retries=2,
+        max_retries=0,
     )
 
 
 @lru_cache(maxsize=1)
 def build_fallback_llm():
-    """primary(build_llm) 실패 시 넘어갈 fallback. with_fallbacks는 호출마다 primary를 먼저
-    시도하므로, rate limit(429)이 풀리면 다음 호출에서 자동으로 primary로 복귀한다 — 별도
-    복귀 로직이 필요 없다. primary가 이미 google이거나 LLM_FALLBACK_MODEL이 비면 폴백 없음."""
-    model = os.getenv("LLM_FALLBACK_MODEL", "gemini-3.5-flash")
-    if not model or os.getenv("LLM_PROVIDER", "cerebras").lower() == "google":
+    model = os.getenv("LLM_FALLBACK_MODEL", "claude-haiku-4-5")
+    if not model:
         return None
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    return ChatGoogleGenerativeAI(model=model, google_api_key=os.getenv("GOOGLE_API_KEY"))
+    from langchain_anthropic import ChatAnthropic
+    return ChatAnthropic(model=model, api_key=os.getenv("ANTHROPIC_API_KEY"), max_retries=2)
 
 
-def apply_fallback(model, configure=lambda m: m):
-    """진짜 ChatModel에만 primary→fallback 체인을 씌운다. configure는 bind_tools /
-    with_structured_output 같은 재가공을 primary·fallback에 똑같이 적용하는 함수
-    (with_fallbacks가 반환하는 러너블엔 그 메서드가 없어서, 감싸기 전에 각각 적용해야 한다).
-    테스트가 주입하는 fake/mock은 BaseChatModel이 아니므로 그대로 통과 — 폴백 안 걸린다."""
+@lru_cache(maxsize=1)
+def build_judge_llm():
+    from langchain_anthropic import ChatAnthropic
+    return ChatAnthropic(
+        model=os.getenv("LLM_JUDGE_MODEL", "claude-sonnet-5"),
+        api_key=os.getenv("ANTHROPIC_API_KEY"),
+        max_retries=0,
+    )
+
+
+def apply_fallback(model, configure=lambda m: m, fallback=None):
+    """fallback 없으면 build_fallback_llm() 사용, 리스트면 순서대로 시도. 전부 실패 시
+    마지막 에러를 던진다(langchain with_fallbacks는 첫 에러만 던져 원인 파악이 안 됨)."""
     if not isinstance(model, BaseChatModel):
         return configure(model)
-    fb = build_fallback_llm()
-    if fb is None:
+    fb = fallback if fallback is not None else build_fallback_llm()
+    raw_models = [model] + [f for f in (fb if isinstance(fb, list) else [fb]) if f is not None]
+    if len(raw_models) == 1:
         return configure(model)
-    return configure(model).with_fallbacks([configure(fb)])
+    chain = [(getattr(m, "model", getattr(m, "model_name", type(m).__name__)), configure(m)) for m in raw_models]
 
+    def _invoke_with_fallback(input):
+        last_exc = None
+        for i, (name, m) in enumerate(chain):
+            try:
+                result = m.invoke(input)
+                if i > 0:
+                    logger.warning("LLM 폴백 성공: %s (앞서 %d개 실패, 마지막 에러: %s)", name, i, last_exc)
+                return result
+            except Exception as exc:
+                logger.warning("LLM 호출 실패, 다음으로 폴백: %s -> %s: %s", name, type(exc).__name__, exc)
+                last_exc = exc
+        raise last_exc
 
-# ---------------- 프롬프트 & 체인 조립 ----------------
+    return RunnableLambda(_invoke_with_fallback)
+
 
 PROMPT = ChatPromptTemplate.from_messages([
     ("system",
@@ -260,8 +257,18 @@ REWRITE_PROMPT = ChatPromptTemplate.from_messages([
 TOPIC_EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "Extract the distinct study topics or concepts the user says they covered today, from the "
-     "conversation below. List each topic once, using the user's own wording — do not rename or "
-     "generalize it into different terminology. Do not explain any topic."),
+     "conversation below (each line prefixed with its speaker: human/ai/tool). List each topic "
+     "once, using the user's own wording — do not rename or generalize it into different "
+     "terminology. Do not explain any topic.\n\n"
+     "CRITICAL: a topic the human only ASKED ABOUT earlier in this conversation (a question "
+     "answered via a tool/RAG lookup) is NOT something they studied today — only extract topics "
+     "from what the human explicitly states THEY studied/covered themselves (a retrospective "
+     "statement, e.g. \"오늘 도커 공부했어\"). If the human asked a question and got an answer, "
+     "that exchange alone does not count unless the human separately says they studied it.\n\n"
+     "Also write `umbrella`: a short title (a few words) covering all of today's topics together, "
+     "used as this session's note title/filename. Prefer the broader subject they belong to over a "
+     "comma-joined list of the topics themselves — e.g. topics `Dockerfile 캐시 레이어`, "
+     "`bind-mount` → umbrella `Docker 배포`. Match the language of the conversation."),
     ("human", "{conversation}"),
 ])
 
@@ -333,7 +340,6 @@ RECALL_QUESTION_PROMPT = ChatPromptTemplate.from_messages([
 
 
 def generate_recall_question(llm, topic: str, conversation: str) -> str:
-    """RECALL_QUESTION_PROMPT로 대화 맥락에 맞는 인출 질문을 생성. study_node·write_daily가 공유."""
     messages = RECALL_QUESTION_PROMPT.invoke(
         {"conversation": conversation, "topic": topic}
     ).to_messages()
@@ -372,19 +378,16 @@ def _extract_sources(docs):
 
 
 def ingest():
-    """인덱싱만 단독 실행. `uv run python rag.py`"""
     embeddings = build_embeddings()
     vectorstore = get_vectorstore(embeddings)
     print(f"인덱싱 완료: {vectorstore._collection.count()}개 청크")
 
 
 def build_rag_chain():
-    """인덱싱(필요 시) + LCEL 체인 구성. invoke(question) → {answer, sources}."""
     embeddings = build_embeddings()
     retriever = get_retriever(embeddings)
     llm = apply_fallback(build_llm())
 
-    # 검색을 1회만 수행해 답변 생성과 출처 추출이 같은 docs를 공유
     retrieve = RunnableParallel(docs=retriever, question=RunnablePassthrough())
     generate = (
         {

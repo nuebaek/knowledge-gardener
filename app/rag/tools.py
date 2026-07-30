@@ -14,7 +14,7 @@ from app.schemas.rag import TopicList
 from app.visualizer.visualizer import visualize_mindmap_text
 from app.writer.writer import write_weekly_note, write_tilnote
 
-MINDMAP_MAX_DOCS = 10  # 한 프롬프트에 붓는 문서 수 상한 
+MINDMAP_MAX_DOCS = 10
 
 
 def _saved(path, doc_type: str) -> dict:
@@ -30,7 +30,6 @@ def _match_documents(query: str | None) -> list[str]:
             if needle in row["source_path"].lower() or needle in row["title"].lower()
         ]
 
-    # query 없으면 "오늘" — dailynote/til 중 오늘 created_at인 것만
     today = date.today().isoformat()
     return [
         row["source_path"]
@@ -41,13 +40,15 @@ def _match_documents(query: str | None) -> list[str]:
 
 
 def make_tools(llm=None, qa_graph=None):
-    """llm/qa_graph 주입 — 테스트가 임베딩·벡터스토어 없이 툴 표면을 검사할 수 있게."""
     llm = llm if llm is not None else build_llm()
     qa_graph = qa_graph if qa_graph is not None else build_rag_graph()
     topic_extractor = apply_fallback(llm, lambda m: m.with_structured_output(TopicList))
 
     @tool(parse_docstring=True)
-    def answer_question(question: str) -> str:
+    def answer_question(
+        tool_call_id: Annotated[str, InjectedToolCallId],
+        question: str,
+    ) -> Command:
         """Search the study document corpus to answer a question.
 
         Use this when the user asks about a concept, requests an explanation, or asks
@@ -59,8 +60,12 @@ def make_tools(llm=None, qa_graph=None):
             question: users question
         """
         result = qa_graph.invoke({"question": question})
-        sources = ", ".join(result.get("sources", [])) or "없음"
-        return f"{result['answer']}\n\n(출처: {sources})"
+        sources = result.get("sources", [])
+        cited = ", ".join(sources) or "없음"
+        return Command(update={
+            "sources": [sources],
+            "messages": [ToolMessage(f"{result['answer']}\n\n(출처: {cited})", tool_call_id=tool_call_id)],
+        })
 
     @tool
     def write_daily(
@@ -81,7 +86,7 @@ def make_tools(llm=None, qa_graph=None):
         conversation = flatten_conversation(state["messages"])
         messages = TOPIC_EXTRACT_PROMPT.invoke({"conversation": conversation}).to_messages()
         topics = topic_extractor.invoke(messages)
-        session = new_session(topics.topics)
+        session = new_session(topics.topics, topics.umbrella)
 
         if not session["pending"]:
             return Command(update={"messages": [
@@ -94,6 +99,7 @@ def make_tools(llm=None, qa_graph=None):
             "pending": session["pending"],
             "answered": session["answered"],
             "seedlings": session["seedlings"],
+            "umbrella": session["umbrella"],
             "messages": [ToolMessage(question, tool_call_id=tool_call_id)],
         })
 

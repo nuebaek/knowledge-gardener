@@ -22,6 +22,12 @@ data/*
 
 .claude/
 
+# AI 에이전트/스킬 도구 산출물 — 로컬 상태, 레포엔 안 실음
+.agents/
+_workspace/
+skills-lock.json
+.DS_Store
+
 docs/CODEBASE_GUIDE.md
 docs/req.md
 docs/week7.md
