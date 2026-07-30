@@ -2,142 +2,215 @@
 
 ![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
-![LangChain](https://img.shields.io/badge/LangChain-1C3C3C)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1C3C3C)
+![LangSmith](https://img.shields.io/badge/LangSmith-1C3C3C)
+![Chroma](https://img.shields.io/badge/Chroma-FF6B6B)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
 
-> 개인의 학습 기록을 지속적으로 축적하고, 그 기록을 다시 검색 가능한 지식으로 활용하는 AI 학습 에이전트
+> **요약해주는 AI는 학습을 대신해준다.** Knowledge Gardener는 요약하지 않고 되묻는다.
 
-Knowledge Gardener는 질문에는 근거 있는 답을 주고, 배운 내용은 잊지 않도록 기록해두는 개인 학습 에이전트다. 질문·일일 학습·주간 회고·프로젝트 TIL을 에이전트가 스스로 구분해 처리하고, 새로 쌓인 문서를 다시 지식베이스에 편입시켜 쓸수록 답변이 좋아지는 구조를 목표로 한다.
+<!-- TODO: 데모 img -->
+
+```
+🧑 오늘 Transformer 공부했어. 정리해줘.
+
+일반적인 AI:
+🤖 Transformer는 Self-Attention을 사용하는...
+
+Knowledge Gardener:
+🤖 Transformer를 본인 말로 설명해주실 수 있나요?
+
+🧑 각 단어 사이의 관련도를 계산하는...
+
+🤖 왜 관련도를 계산해야 하나요?
+   순서대로 처리하면 안 되는 이유는 뭘까요?
+```
+
+설명해낸 내용은 학습 노트로 저장하고,
+
+설명하지 못한 개념은 **🌱 다시 꺼내볼 것(seedling)** 으로 남긴다.
+
+이 기록은 다시 Knowledge Base에 편입되어 이후 질문의 검색 근거가 된다.
 
 ---
 
 ## Why
 
-대부분의 개인용 RAG는 문서를 검색해 답을 찾는 것에서 끝난다. 하지만 실제 학습은 검색보다 배운 내용을 다시 꺼내 설명하고, 기존 지식과 연결하는 과정에서 이루어진다.
+대부분의 AI 학습 도구는 사용자가 설명하기 전에 **답부터 알려준다.**
 
-Dunlosky 외(2013)의 학습 기법 메타분석(*Improving Students' Learning With Effective Learning Techniques*)에서도 **인출 연습(practice testing)** 과 **분산 복습(distributed practice)** 은 학습 효과가 높은 전략으로 평가된 반면, 요약이나 재독처럼 많이 사용하는 방법은 효과가 상대적으로 낮았다.
+하지만 교육학 연구(Dunlosky et al., 2013)는
 
-Knowledge Gardener는 이러한 학습 원칙을 서비스 설계에 반영했다.
+- **Retrieval Practice (인출 연습)**
+- **Spaced Repetition (분산 복습)**
 
-- 질문을 하면 근거 문서를 검색해 답변한다.
-- 하루를 마칠 때는 `write_daily`가 오늘 배운 내용을 자신의 말로 정리하게 한다.
-- 단순 요약이 아니라 '이 개념이 무엇과 연결되는가?'를 함께 기록해 기존 지식과 연결하도록 유도한다.
-- 주간 단위에서는 `write_weekly`가 일일 기록을 다시 묶어 회고하도록 하여 자연스럽게 분산 복습이 이루어진다.
+은 높은 학습 효과를 보이고,
 
-이렇게 만들어진 학습 기록은 다시 검색 가능한 지식베이스에 편입된다. 즉, 이 프로젝트는 **질문에 답하는 RAG**와 **학습 기록을 축적하는 시스템**을 하나의 에이전트 안에서 연결해, 사용할수록 개인의 지식이 함께 성장하는 구조를 목표로 한다.
+- 요약
+- 재독
+
+은 상대적으로 효과가 낮다고 보고한다.
+
+그래서 Knowledge Gardener는
+
+> **"요약을 잘하는 AI"가 아니라 "설명하게 만드는 AI"**
+
+를 목표로 설계했다.
+
+### Design Principles
+
+| 원칙 | 시스템에서 어떻게 강제했는가 |
+|------|---------------------------|
+| 요약 생성 경로 제거 | `write_daily`는 질문만 생성하며, 답은 절대 생성하지 않는다. |
+| 추측 생성 금지 | 설명하지 못한 내용은 채우지 않고 `🌱 seedlings`에만 기록한다. |
+| 얕은 이해 차단 | 설명이 피상적이면 반드시 후속 질문을 생성한다. |
+| 임의 종료 방지 | 마지막 토픽에서도 저장하지 않고 반드시 사용자 확인을 거친다. |
 
 ---
 
-## 주요 기능
+## 인출 루프
 
-**근거 기반 질의응답** (`answer_question`)  
-검색된 문서에 근거해서만 답변하고 출처를 함께 반환한다. 관련도가 낮으면 질문을 다시 써서 재검색한다(최대 2회).
+인출연습은 한 번의 질문으로 끝나지 않는다.
 
-**학습 기록 자동 저장** (`write_daily` / `write_weekly` / `write_til`)  
-회고형 발화에서 언급된 내용만 구조화해 일간·주간·프로젝트 단위로 저장한다. 언급 안 된 내용은 지어내지 않고 되묻는다.
+사용자의 답변에 따라 추가 질문을 하거나, 다음 토픽으로 넘어가거나, 저장 여부를 확인해야 한다.
+Knowledge Gardener는 이 흐름을 **LangGraph 기반의 상태 전이(State Transition)** 로 관리한다.
 
-**질문 vs 회고, 에이전트가 스스로 판단**  
-LLM이 tool description을 보고 스스로 호출을 판단한다(tool-calling). `thread_id`로 멀티턴 맥락이 유지된다.
+이 과정에서 학습 세션은 네 가지 상태를 오가며 진행된다.
 
----
+- **pending** : 아직 설명하지 않은 토픽
+- **answered** : 충분히 설명한 토픽
+- **seedlings** : 다시 복습할 토픽
+- **awaiting_finalize** : 저장 여부를 확인하는 단계
 
-## 데모
+```mermaid
+flowchart TD
+    U(["사용자 발화"]) --> A{"agent"}
 
+    A -->|질문| AQ["answer_question"]
+
+    A -->|"오늘 공부했어"| WD["write_daily"]
+
+    A -->|기타| R["응답"]
+
+    WD --> S["study"]
+
+    S -->|"더 파고들기"| S
+    S -->|"다음 토픽"| S
+    S -->|"토픽 종료"| C["confirm_finalize"]
+
+    C -->|"새 토픽 발견"| S
+    C -->|"없음"| F["finalize"]
 ```
-POST /converse {"message": "Transformer의 Encoder와 Decoder 차이가 뭐야?", "thread_id": "t1"}
-   ↓
-Agent가 answer_question 호출 → retrieve → grade_docs
-   ├─ score ≥ 0.4 → generate: 문서 근거로 답변 생성
-   └─ score < 0.4 → rewrite_query → retrieve 재시도 (최대 2회)
-   ↓
-{"answer": "...", "tools_used": [], "saved_documents": []}
 
-POST /converse {"message": "오늘 LangGraph 공부했고 tool-calling 배웠어. 정리해줘", "thread_id": "t1"}
-   ↓
-Agent가 write_daily 호출 (인자 검증 실패 시 에러 메시지 보고 자동 재시도)
-   ↓
-data/writer/dailynote/*.md 저장
-   ↓
-{"answer": "...", "tools_used": ["write_daily"], "saved_documents": [{"type": "write_daily", "file_name": "..."}]}
-```
+`answer_question`은 검색 점수가 낮으면 질문을 다시 작성해 최대 2회까지 재검색한다.
+
+검색 근거가 충분하지 않다면 답을 생성하기보다, 먼저 근거를 확보하도록 설계했다.
 
 ---
 
 ## 아키텍처
 
-![Architecture](docs/knowledge-gardener-architecture.svg)
+```mermaid
+flowchart TB
+    subgraph ingest["Ingest"]
+        RAW["data/raw<br/>PDF, HTML, DOCX"]
+        PRE["preprocess.py<br/>markitdown"]
+        MD["data/processed/*.md<br/>원본, source of truth"]
+        RAW --> PRE --> MD
+    end
 
-서버 시작 시 에이전트 그래프를 한 번만 구성해 재사용한다.   
-사용자 메시지가 오면 LLM이 시스템 프롬프트와 대화 맥락을 보고 `answer_question` (검색) 또는 `write_daily` / `write_weekly` / `write_til` (저장) 중 하나를 부르거나, 되묻는다.  
-모든 실행은 LangSmith로 추적, 평가된다.
+    subgraph derived["파생 계층 — 언제든 재생성 가능"]
+        CAT[("SQLite 카탈로그<br/>content_hash, 태그")]
+        VEC[("Chroma<br/>bge-m3 임베딩")]
+    end
+
+    subgraph app["FastAPI"]
+        LIFE["lifespan<br/>sync_from_disk +<br/>그래프 1회 구성"]
+        AGENT["LangGraph 에이전트<br/>tool-calling + 체크포인터"]
+    end
+
+    NOTES["data/writer/*.md<br/>데일리, 주간, TIL"]
+
+    MD -->|"해시 바뀐 것만"| CAT
+    CAT --> VEC
+    LIFE --> AGENT
+    AGENT -->|"answer_question<br/>검색"| VEC
+    AGENT -->|write_daily| NOTES
+    NOTES -->|다시 인덱싱| CAT
+
+    UI["웹 UI<br/>대화 + 문서함"] <--> AGENT
+
+    style MD fill:#2d5016,color:#fff
+    style NOTES fill:#2d5016,color:#fff
+```
 
 ---
 
 ## 기술 스택
 
-| 영역 | 선택 | 이유 |
+| 영역 | 선택 | 채택 근거 |
 |---|---|---|
-| 에이전트 오케스트레이션 | LangGraph StateGraph + tool-calling (`bind_tools`, `InMemorySaver`) | 조건 분기·재시도·대화 메모리는 단일 체인(LCEL)으로 표현 불가 |
-| 문서 전처리 | [markitdown](https://github.com/microsoft/markitdown) + Markdown Header Splitter | 형식(PDF/HTML/DOCX) 통일 + 헤더 단위 분할로 검색 시 의미 보존 |
-| 검색 재시도 | score 기반 `grade_docs` + `rewrite_query` (최대 2회) | top1 relevance score < 0.4면 재검색, 상한으로 무한루프 방지 |
-| 임베딩 · 벡터 DB | 로컬 `BAAI/bge-m3` + Chroma `PersistentClient` | API/Cloud 무료 한도 초과 → 로컬 전환으로 무제한·무료 |
-| 생성 LLM | `gemini-2.5-flash` · `gemma4:e2b`(Ollama) · `gemma-4-31b`(Cerebras, 기본) | provider만 바꿔 같은 코드로 품질·속도·비용 A/B 비교 |
-| 서빙 · 평가 | FastAPI(`lifespan`으로 그래프 1회 구성) + LangSmith | 요청마다 `invoke()`만 호출, 전 실행 추적·평가 |
+| 에이전트 | LangGraph `StateGraph` + tool-calling + 체크포인터 | 조건 분기와 멀티턴 상태는 단일 체인(LCEL)으로 표현할 수 없다 |
+| 전처리 | [markitdown](https://github.com/microsoft/markitdown) + Markdown Header Splitter | 형식을 통일하고, 헤더 단위로 쪼개 검색 시 섹션 의미를 보존한다 |
+| 인덱스 | SQLite 카탈로그(`content_hash`) + ChromaDB | 변경 감지와 태그는 SQL로, 유사도는 벡터로 — 둘 다 `.md`에서 재생성 가능한 파생 데이터다 |
+| 임베딩 | 로컬 `BAAI/bge-m3` | API 무료 한도를 넘어 로컬로 전환 |
+| LLM | 생성: Cerebras `gemma-4-31b` → (폴백) Claude `Haiku 4.5`<br>판정: Claude `Sonnet 5` | 판정 오류는 사용자 경험에 직접 영향을 주기 때문에, Generation보다 Judge에 더 높은 성능의 모델을 사용했다 |
+| 서빙 | FastAPI, `lifespan`에서 그래프 1회 구성 | 요청마다 그래프를 새로 만들지 않는다 |
+| 관측 | LangSmith 추적 + 요청별 `elapsed_ms` 로깅 | Trace 및 Latency 분석 |
+| 배포 | Docker + Compose + EC2 | 앱과 Chroma를 서비스로 분리, named volume, EC2용 compose 별도 |
+
+---
+
+## 실행
+
+```bash
+# Docker (권장)
+cp .env.example .env          # 실제 키 입력, 커밋 금지
+docker compose up --build     # app(:8080) + chroma(:8000)
+
+# 로컬 개발
+uv sync
+cp .env.example .env
+uv run python scripts/preprocess.py   # data/raw/* → data/processed/*.md
+uv run fastapi dev app/main.py        # http://localhost:8000
+```
+
+별도 인덱싱 명령은 없다
+
+서버 시작 시 카탈로그가 디스크와 동기화되고(`sync_from_disk`), 해시가 바뀐 문서만 자동 재임베딩된다(`sync_index`).
 
 ---
 
 ## 프로젝트 구조
 
 ```
-kaia-project/
-├── main.py                    # FastAPI 진입점 (lifespan에서 에이전트 그래프 1회 구성)
-├── graph.py                   # QA 그래프(재검색 루프) / 에이전트 그래프(tool-calling+메모리)
-├── nodes.py                   # retrieve / generate / grade_docs / rewrite_query 노드
-├── tools.py                   # answer_question / write_daily / write_weekly / write_til
-├── writer.py                  # 노트 저장 로직 (프론트매터 + LLM 본문)
-├── rag.py                     # 임베딩·벡터스토어·LLM 빌더
-├── state.py                   # GraphState 정의
-├── routers/converse.py        # POST /converse, GET /threads/{thread_id}
-├── routers/corpus.py          # 코퍼스 조회
-├── controllers/rag.py         # 그래프 호출 + 응답 변환 + 에러 처리
-├── schemas.py                 # 요청/응답 모델
-├── preprocess.py              # data/raw → markitdown → data/processed
-├── baseline.py                # LangSmith 평가 스크립트
-├── prompts/                   # 콘텐츠 프롬프트
-├── static/                    # 프론트엔드 (대화형 UI, /converse 기반)
-├── data/, chroma_data/        # ← gitignore
-└── docs/
+app/
+├── main.py               # lifespan에서 sync_from_disk() + 에이전트 그래프 1회 구성
+├── api/routes/           # POST /converse, GET /threads/{id}, 문서 카탈로그 CRUD
+├── rag/
+│   ├── graph.py          # QA 그래프(재검색 루프) / 에이전트 그래프(인출연습 상태 기계)
+│   ├── nodes.py          # retrieve, generate, grade_docs, rewrite_query / study, finalize, confirm
+│   ├── study_session.py  # 인출연습 상태 전이 — 순수 함수, LLM 없이 테스트
+│   ├── tools.py          # answer_question, write_daily, write_weekly, write_til, visualize_mindmap
+│   └── chain.py          # 임베딩, 벡터스토어, LLM 빌더, 폴백 체인, sync_index
+├── core/catalog.py       # SQLite 카탈로그 — content_hash, prune_missing, 태그
+├── writer/               # 노트 저장 (프론트매터 + 인출연습 프롬프트)
+└── services/, schemas/, visualizer/
+scripts/
+├── preprocess.py         # data/raw → markitdown → data/processed
+├── eval_retrieval.py     # 검색 평가 + threshold 스윕
+└── baseline.py           # LangSmith 엔드투엔드 평가
+static/                   # 웹 UI (대화 + 문서 리더)
 ```
-
----
-
-## 실행 방법
-
-```bash
-uv sync
-cp .env.example .env          # LLM_PROVIDER=google|ollama|cerebras, 실제 키 커밋 금지
-
-uv run python preprocess.py   # data/raw/* → data/processed/*.md
-uv run python rag.py          # 인덱싱 (chroma_data 생성, 최초 1회)
-uv run fastapi dev main.py    # 서버 (http://localhost:8000/docs)
-```
-
-`/docs`에서 API 스펙과 예시 요청을 바로 확인할 수 있다.
 
 ---
 
 ## 로드맵
 
-| 구성 | 계획 | 시점 |
-|---|---|---|
-| Graph RAG | 개체·관계를 그래프로 저장해 벡터 검색과 함께 다중 홉 질문에 답변 | 미정 |
-| 학습 기록 재인덱싱 | 저장된 학습일지를 기존 인덱싱 파이프라인에 그대로 편입 — 쓸수록 코퍼스가 늘고 답변 근거도 풍부해지는 구조 | 미정 |
-| Hub 고도화 | 재검색을 LLM 채점으로 교체, RAGAS 평가 도입, BM25 하이브리드 검색 | 미정 |
-| Input Layer | 판서 인식(OCR), 북마크 흡수 | 미정 |
-| Output Layer | Graph RAG 기반 마인드맵 시각화 | 미정 |
-
----
-
-## 회고
-
-- [7주차 회고](docs/retro-week7.md) — FastAPI 서빙 + LangSmith 평가 도입, 평가 결과 수치(모델 비교, latency 실측)
+| 계획 | 이유 |
+|---|---|
+| 문서 업로드 API | 원격 배포 환경에서도 브라우저만으로 문서를 추가할 수 있도록 인제스트 경로 확장 |
+| 하이브리드 검색 (BM25 + Dense) | Dense Retrieval이 놓치는 키워드 기반 검색을 보완하고 Retrieval 성능 향상 |
+| Retrieval 평가 결과 공개 | Hit Rate, MRR 등 검색 품질 지표를 공개해 튜닝 과정을 재현 가능하게 문서화 |
+| End-to-End 평가 자동화 | LangSmith 기반 평가를 CI에 포함해 변경 사항이 답변 품질에 미치는 영향을 지속적으로 검증 |
+| 사용자 피드백 기반 개선 | 👍/👎 피드백을 평가셋으로 축적해 Retrieval과 Prompt를 지속적으로 개선 |
+| GitHub Actions CI | 테스트·Lint·Docker 빌드를 자동화해 안정적인 배포 파이프라인 구축 |
