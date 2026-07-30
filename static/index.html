@@ -23,11 +23,17 @@
 <body>
   <div id="root-app" class="app">
     <nav class="rail" aria-label="패널 전환" id="rail">
-      <div class="rail-mark" aria-hidden="true"><span class="rail-mark-dot"></span></div>
+      <div class="rail-mark" aria-hidden="true">
+        <svg class="rail-mark-sprout" viewBox="0 0 48 64" width="24" height="32" aria-hidden="true">
+          <path class="rail-mark-leaf" d="M24 36 C 12 36, 6 26, 8 13 C 19 15, 25 24, 24 36 Z" />
+          <path class="rail-mark-leaf" d="M24 28 C 36 28, 42 19, 40 8 C 30 10, 24 17, 24 28 Z" />
+          <path class="rail-mark-stem" d="M24 58 L24 21" />
+        </svg>
+      </div>
 
       <div class="rail-tabs" role="tablist" aria-label="패널" aria-orientation="vertical">
         <span class="rail-indicator" id="rail-indicator" aria-hidden="true"></span>
-        <button type="button" class="rail-tab" id="tab-chat" role="tab" aria-selected="true" tabindex="0"
+        <button type="button" class="rail-tab" id="tab-chat" role="tab" aria-selected="false" tabindex="-1"
           aria-controls="panel-chat" data-panel="chat">
           <svg class="rail-tab-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
             <path d="M3.5 5.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H8l-3 3v-3h-.5a2 2 0 0 1-2-2v-6Z"
@@ -35,7 +41,7 @@
           </svg>
           <span class="rail-tab-label">채팅</span>
         </button>
-        <button type="button" class="rail-tab" id="tab-documents" role="tab" aria-selected="false" tabindex="-1"
+        <button type="button" class="rail-tab" id="tab-documents" role="tab" aria-selected="true" tabindex="0"
           aria-controls="panel-documents" data-panel="documents">
           <svg class="rail-tab-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
             <path d="M6 2.5h5.5L15 6v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1Z"
@@ -44,14 +50,6 @@
             <path d="M7.5 10h5M7.5 13h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
           </svg>
           <span class="rail-tab-label">문서</span>
-        </button>
-        <button type="button" class="rail-tab" id="tab-search" role="tab" aria-selected="false" tabindex="-1"
-          aria-controls="panel-search" data-panel="search">
-          <svg class="rail-tab-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <circle cx="8.5" cy="8.5" r="5" stroke="currentColor" stroke-width="1.4" />
-            <path d="M16 16l-3.8-3.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-          </svg>
-          <span class="rail-tab-label">검색</span>
         </button>
       </div>
 
@@ -62,8 +60,7 @@
 
     <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
 
-    <!-- ---- chat panel ---- -->
-    <section class="panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" tabindex="0">
+    <section class="panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" tabindex="0" hidden>
       <header class="panel-head">
         <div class="panel-head-main">
           <h1 class="panel-title"><span class="title-dot" aria-hidden="true"></span>Knowledge Gardener</h1>
@@ -95,15 +92,13 @@
       <form class="composer" id="composer" autocomplete="off">
         <label class="sr-only" for="message">메시지 입력</label>
         <div class="prompt-bar">
-          <span class="prompt-caret" aria-hidden="true">&gt;</span>
           <textarea id="message" name="message" placeholder="질문 또는 오늘 배운 내용" rows="1" required></textarea>
-          <button type="submit" id="submit-btn" aria-label="보내기">↵</button>
+          <button type="submit" id="submit-btn" aria-label="보내기">↑</button>
         </div>
       </form>
     </section>
 
-    <!-- ---- documents panel ---- -->
-    <section class="panel" id="panel-documents" role="tabpanel" aria-labelledby="tab-documents" tabindex="0" hidden>
+    <section class="panel" id="panel-documents" role="tabpanel" aria-labelledby="tab-documents" tabindex="0">
       <header class="panel-head">
         <div class="panel-head-main">
           <h1 class="panel-title">문서함</h1>
@@ -111,6 +106,12 @@
         </div>
         <div class="panel-head-meta" id="doc-count-tag"></div>
       </header>
+
+      <div class="doc-search-bar" id="doc-search-bar">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <label class="sr-only" for="doc-search-input">문서 검색</label>
+        <input id="doc-search-input" type="text" placeholder="키워드로 문서 검색" autocomplete="off" />
+      </div>
 
       <div class="doc-filter-row">
         <div class="doc-folder-tabs" id="doc-folder-tabs" role="tablist" aria-label="문서 폴더"></div>
@@ -123,34 +124,15 @@
         <div class="doc-list" id="doc-list" aria-label="문서 목록"></div>
         <div class="doc-reader" id="doc-reader">
           <div class="doc-reader-empty" id="doc-reader-empty">
-            <div class="empty-seed" aria-hidden="true">
-              <span class="empty-glow"></span>
-              <span class="empty-stub"></span>
-            </div>
+            <svg class="empty-sprout" viewBox="0 0 48 64" width="28" height="37" aria-hidden="true">
+              <path class="empty-sprout-leaf" d="M24 36 C 12 36, 6 26, 8 13 C 19 15, 25 24, 24 36 Z" />
+              <path class="empty-sprout-leaf" d="M24 28 C 36 28, 42 19, 40 8 C 30 10, 24 17, 24 28 Z" />
+              <path class="empty-sprout-stem" d="M24 58 L24 21" />
+              <circle class="empty-sprout-seed" cx="24" cy="58" r="4" />
+            </svg>
             <p class="empty-text">왼쪽에서 문서를 선택하면 원문을 보여드립니다.</p>
           </div>
           <article class="doc-reader-body" id="doc-reader-body" hidden></article>
-        </div>
-      </div>
-    </section>
-
-    <!-- ---- search panel ---- -->
-    <section class="panel" id="panel-search" role="tabpanel" aria-labelledby="tab-search" tabindex="0" hidden>
-      <header class="panel-head">
-        <div class="panel-head-main">
-          <h1 class="panel-title">검색</h1>
-          <p class="panel-sub">문서 전문에서 키워드를 찾습니다.</p>
-        </div>
-      </header>
-
-      <div class="search-body">
-        <form class="search-bar" id="search-form" autocomplete="off">
-          <label class="sr-only" for="search-input">문서 검색</label>
-          <span class="search-icon" aria-hidden="true">⌕</span>
-          <input id="search-input" type="text" placeholder="키워드로 문서 검색" />
-        </form>
-        <div class="search-results" id="search-results" aria-live="polite">
-          <p class="search-hint">궁금한 개념을 입력해보세요.</p>
         </div>
       </div>
     </section>
@@ -161,9 +143,8 @@
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
   <script type="module">
-    // mind-elixir는 ESM 전용이라 마크업/스크립트를 UMD로 깔아둔 다른 CDN 라이브러리들과
-    // 같은 방식(window 전역)으로 못 씀 — 동적 import로 가져와서 window에 얇은 헬퍼만 노출.
-    // 마인드맵 tool이 실제로 쓰일 때만 다운로드되도록 정적 import가 아니라 함수 안에서 로드함.
+    // mind-elixir is ESM-only, unlike the other UMD CDN libs above — loaded via
+    // dynamic import inside this function so it only downloads when actually used.
     window.renderMindmapInto = async function (container, plaintext) {
       const [{ default: MindElixir }, { plaintextToMindElixir }] = await Promise.all([
         import("https://cdn.jsdelivr.net/npm/mind-elixir/dist/MindElixir.js"),
@@ -172,7 +153,7 @@
       const data = plaintextToMindElixir(plaintext);
       const mind = new MindElixir({ el: container, direction: MindElixir.SIDE });
       mind.init(data);
-      mind.scaleFit(); // init 직후엔 컨테이너 크기에 안 맞춰져 있어서 넘쳐 보임 — 강제로 맞춤
+      mind.scaleFit(); // not sized to the container right after init otherwise
       return mind;
     };
   </script>
