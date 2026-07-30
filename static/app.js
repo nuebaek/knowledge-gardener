@@ -8,17 +8,8 @@ const submitBtn = document.getElementById("submit-btn");
 const announcer = document.getElementById("announcer");
 const corpusTag = document.getElementById("corpus-tag");
 
-// /converse의 saved_documents.type은 툴 이름이 아니라 저장된 문서 종류다.
-const DOC_TYPE_LABELS = {
-  dailynote: "데일리노트",
-  weeklynote: "위클리노트",
-  til: "TIL",
-};
-
 marked.setOptions({ breaks: true, gfm: true });
 
-// ---- thread_id: created once, kept for the life of this browser's journal,
-// but "새 채팅" can mint a fresh one without reloading the page ----
 const THREAD_KEY = "kaia:thread_id";
 
 function getThreadId() {
@@ -32,22 +23,42 @@ function getThreadId() {
 
 let threadId = getThreadId();
 
-// ---- markdown + LaTeX rendering (shared by chat answers and the document reader) ----
 function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// CommonMark 규칙상 닫는 **가 문장부호 바로 뒤에 오고 공백 없이 한글이 이어지면
-// "닫는 델리미터"로 인정되지 않아 **가 그대로 노출된다 — 공백 하나를 넣어 우회한다.
+// CommonMark: closing ** right after punctuation with no space before Hangul isn't
+// treated as a closer — add one to work around it.
 function fixEmphasisSpacing(text) {
   return text.replace(/([)\]"'”’])\*\*(?=[가-힣])/g, "$1** ");
 }
 
-// catalog.py는 created_at을 UTC ISO 문자열로 저장한다 — 화면엔 글자수 대신 이 날짜를 보여준다.
 function formatDocDate(isoString) {
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
+}
+
+function markRecallBlocks(container) {
+  const isHeading = (el) => /^H[1-4]$/.test(el.tagName);
+  Array.from(container.children).forEach((el) => {
+    if (el.parentElement !== container) return; // already swept into an earlier wrapper
+    if (!el.textContent.trim().startsWith("🌱")) return;
+
+    const group = [el];
+    if (isHeading(el)) {
+      let next = el.nextElementSibling;
+      while (next && next.tagName !== "HR" && !isHeading(next)) {
+        group.push(next);
+        next = next.nextElementSibling;
+      }
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "recall-block";
+    el.before(wrapper);
+    group.forEach((node) => wrapper.appendChild(node));
+  });
 }
 
 function renderMarkdownInto(container, rawText) {
@@ -61,6 +72,7 @@ function renderMarkdownInto(container, rawText) {
   html = html.replace(/@@MATH(\d+)@@/g, (_, i) => escapeHtml(mathTokens[Number(i)]));
 
   container.innerHTML = html;
+  markRecallBlocks(container);
 
   if (window.renderMathInElement) {
     renderMathInElement(container, {
@@ -73,19 +85,16 @@ function renderMarkdownInto(container, rawText) {
   }
 }
 
-// writer 문서는 "# 목차" 헤딩 아래 평문 번호 목록("1. fp32")으로 목차를 쓰고, 그 아래
-// 본문 헤딩도 같은 텍스트("# 1. fp32")로 나온다 — 마크다운 링크가 아니라서 클릭해도 아무 일도
-// 안 났다. 헤딩마다 id를 붙이고 목차 항목 텍스트를 헤딩 텍스트와 매칭해서 클릭 시 스크롤되게 한다.
+// writer's TOC items are plain numbered text, not links — wire clicks to scroll to
+// the matching heading.
 function wireTocLinks(container) {
   const headings = Array.from(container.querySelectorAll("h1, h2, h3, h4, h5, h6"));
   if (headings.length === 0) return;
 
   const slugCounts = new Map();
   const labelOf = (text) => text.trim().replace(/^\d+(?:\.\d+)*\.?\s*/, "").toLowerCase();
-  // daily note의 중첩 목차(부모 항목 아래 하위 개념)에서 li.textContent는 중첩된 <ol>의
-  // 텍스트까지 그대로 이어붙여 돌려준다(예: "Docker" 항목 밑에 "Dockerfile"/"Image"가 중첩돼
-  // 있으면 "DockerDockerfileImage..."가 됨) — 그래서 하위 항목이 있는 부모 항목만 매칭이
-  // 항상 실패했다. 중첩 리스트를 떼어낸 사본에서 읽어야 그 li 자신의 라벨만 나온다.
+  // li.textContent includes nested <ol> text too, so a parent item with children
+  // never matched — strip nested lists first.
   const ownLabel = (li) => {
     const clone = li.cloneNode(true);
     clone.querySelectorAll("ol, ul").forEach((nested) => nested.remove());
@@ -106,7 +115,7 @@ function wireTocLinks(container) {
     if (!/^(목차|table of contents)/i.test(tocHeading.textContent.trim())) return;
     let list = tocHeading.nextElementSibling;
     while (list && !["OL", "UL"].includes(list.tagName)) {
-      if (/^H[1-6]$/.test(list.tagName)) return; // 목차 헤딩 바로 다음에 리스트가 없으면 포기
+      if (/^H[1-6]$/.test(list.tagName)) return;
       list = list.nextElementSibling;
     }
     if (!list) return;
@@ -115,8 +124,8 @@ function wireTocLinks(container) {
       if (!target) return;
       li.classList.add("toc-link");
       li.addEventListener("click", (e) => {
-        // 하위 항목 클릭이 부모 li까지 버블링되면 부모 항목의 핸들러가 나중에 또 실행되면서
-        // 스크롤 위치가 부모 섹션으로 덮어써진다 — 부모 항목도 이제 정상 매칭되므로 막아야 함.
+        // prevents a child click's scroll target from being overwritten by the
+        // parent li's own handler
         e.stopPropagation();
         target.scrollIntoView({ behavior: "smooth", block: "start" });
       });
@@ -124,17 +133,12 @@ function wireTocLinks(container) {
   });
 }
 
-// ---- corpus: seeds the empty state with example prompts, tags the rail with doc count ----
 function pickSample(list, n) {
   if (list.length <= n) return list;
   const step = list.length / n;
   return Array.from({ length: n }, (_, i) => list[Math.floor(i * step)]);
 }
 
-// rail-foot 태그는 /corpus의 count(= RAG에 색인된 코퍼스 문서 수, doc_type="processed"만
-// 집계 — 아직 재인덱싱되지 않는 데일리/위클리/TIL은 여기 안 잡힘, README 로드맵의
-// "학습 기록 재인덱싱" 항목 참고)가 아니라 /documents 전체 개수를 쓴다. 안 그러면
-// 매일 노트를 써도 이 숫자가 그대로라 "업데이트가 안 된다"는 오해를 산다.
 async function loadCorpus() {
   try {
     const [corpusRes, docsRes] = await Promise.all([fetch("/corpus"), fetch("/documents")]);
@@ -159,21 +163,15 @@ async function loadCorpus() {
     });
     if (topics.length > 0) examples.hidden = false;
   } catch (err) {
-    // 코퍼스 정보는 부가 정보라 실패해도 대화 흐름엔 영향 없음
+    // corpus info is supplementary — a failed fetch shouldn't break the chat
   }
 }
 
-// =====================================================================
-// panel shell: rail tabs switch which <section class="panel"> is visible.
-// standard roving-tabindex tab pattern — one tab is reachable at a time,
-// arrow keys move focus and activate the panel together.
-// =====================================================================
 const railTabs = Array.from(document.querySelectorAll(".rail-tab"));
 const railIndicator = document.getElementById("rail-indicator");
 const panels = {
   chat: document.getElementById("panel-chat"),
   documents: document.getElementById("panel-documents"),
-  search: document.getElementById("panel-search"),
 };
 
 function activatePanel(name) {
@@ -187,8 +185,7 @@ function activatePanel(name) {
     el.hidden = key !== name;
   });
   if (name === "documents") ensureDocumentsLoaded().catch(() => {});
-  if (name === "search") searchInput.focus({ preventScroll: true });
-  history.replaceState(null, "", name === "chat" ? "#" : `#${name}`);
+  history.replaceState(null, "", name === "documents" ? "#" : `#${name}`);
 }
 
 railTabs.forEach((tab, i) => {
@@ -203,13 +200,6 @@ railTabs.forEach((tab, i) => {
   });
 });
 
-// ---- rail indicator: one shared bar springs to the active tab, instead of a fresh
-// element popping in/out per tab — the physical "selection glides over" feel of a
-// segmented control or a Dock highlight. Apple's damping/response model (see
-// apple-design skill notes), implemented as a tiny critically-damped spring since this
-// project has no animation library. Retargeting mid-flight (a second click before the
-// first settles) just moves `target` — the existing velocity carries through, so it's
-// interruptible rather than restarting from a hard stop. ----
 function makeSpring({ damping = 1, response = 0.32 } = {}) {
   const angularFreq = (2 * Math.PI) / response;
   const stiffness = angularFreq * angularFreq;
@@ -243,7 +233,7 @@ function makeSpring({ damping = 1, response = 0.32 } = {}) {
 
 const railSpring = makeSpring();
 let railAnimHandle = null;
-let railAxis = "y"; // "y" = desktop vertical rail, "x" = mobile top-bar
+let railAxis = "y";
 const railMobileQuery = window.matchMedia("(max-width: 40rem)");
 
 function railTargetFor(tab) {
@@ -282,9 +272,8 @@ function moveRailIndicatorTo(tab) {
   runRailSpring();
 }
 
-// resize/orientation changes swap the indicator's axis entirely (top-to-bottom vs
-// left-to-right) — springing across that jump would look like a diagonal glitch, so
-// these snap instead of animating.
+// axis flips (vertical <-> horizontal) snap instead of springing — animating
+// across the jump would look like a diagonal glitch
 function snapRailIndicator() {
   railAxis = railMobileQuery.matches ? "x" : "y";
   railIndicator.classList.toggle("rail-indicator--horizontal", railAxis === "x");
@@ -297,10 +286,8 @@ function snapRailIndicator() {
 window.addEventListener("resize", snapRailIndicator);
 railMobileQuery.addEventListener("change", snapRailIndicator);
 snapRailIndicator();
-// webfonts finishing their swap can nudge tab widths by a px or two after first paint
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(snapRailIndicator);
 
-// ---- documents panel: list + reader ----
 const docListEl = document.getElementById("doc-list");
 const docReaderEmpty = document.getElementById("doc-reader-empty");
 const docReaderBody = document.getElementById("doc-reader-body");
@@ -310,20 +297,18 @@ const docFolderTabs = document.getElementById("doc-folder-tabs");
 const tagFilterPill = document.getElementById("tag-filter-pill");
 const tagFilterLabel = document.getElementById("tag-filter-label");
 
-// doc_type은 저장 경로(data/writer/dailynote 등)에서 그대로 온 값 — 화면 표시용 한글 라벨만 매핑.
-// "processed"는 scripts/preprocess.py가 data/raw/* 를 무엇이든 markitdown으로 변환해
-// data/processed/*.md 에 넣으면 그대로 붙는 이름이라 "강의자료"로 못 박으면 안 됨 —
-// 지금까지 CS231n 강의노트만 넣어봐서 우연히 그렇게 보였을 뿐, 논문이든 뭐든 같은
-// 파이프라인을 타면 여기로 들어온다. 그래서 문서함 subtitle과 같은 용어인 "코퍼스"로 표기.
+// doc_type comes straight from the storage path — "processed" isn't always CS231n
+// (any file through scripts/preprocess.py lands there), so don't hardcode a label.
 const DOC_TYPE_LABELS = { dailynote: "데일리노트", weeklynote: "위클리노트", til: "TIL", processed: "코퍼스" };
 
 let documentsPromise = null;
-let allDocuments = []; // 폴더 탭을 서버 왕복 없이 즉시 전환하려고 전체를 한 번만 받아 클라이언트에서 필터링
-let activeDocType = null; // null = 전체
-let activeTag = null; // null = 태그 필터 없음, 리더에서 태그를 클릭하면 설정됨
+let allDocuments = [];
+let activeDocType = null;
+let activeTag = null;
+let activeQuery = "";
+let searchDebounce = null;
+let searchRequestId = 0;
 
-// shaped like the doc-card it's about to become, not a spinner — so the list doesn't
-// visually jump when the real cards land
 function docListSkeleton(count = 4) {
   return Array.from({ length: count })
     .map(
@@ -369,6 +354,7 @@ function renderFolderTabs() {
     btn.textContent = label;
     btn.setAttribute("aria-selected", String(activeDocType === value));
     btn.addEventListener("click", () => {
+      clearSearch();
       activeDocType = value;
       renderFolderTabs();
       applyFilters();
@@ -379,9 +365,12 @@ function renderFolderTabs() {
   types.forEach((t) => makeTab(t, DOC_TYPE_LABELS[t] || t));
 }
 
-// 폴더(doc_type)와 태그, 두 축을 AND로 겹쳐서 걸러낸다 — 리더에서 태그를 클릭해도
-// 폴더 탭 상태는 그대로 두고 목록만 좁혀지도록.
+// search and folder/tag browsing are mutually exclusive modes
 function applyFilters() {
+  if (activeQuery) {
+    runDocSearch(activeQuery);
+    return;
+  }
   const filtered = allDocuments.filter((d) => {
     if (activeDocType && d.doc_type !== activeDocType) return false;
     if (activeTag && !d.tags.includes(activeTag)) return false;
@@ -400,9 +389,10 @@ function renderTagFilterPill() {
   tagFilterPill.hidden = false;
 }
 
-// 리더에서 태그 라벨을 클릭하면 호출됨 — 지금 읽고 있는 문서가 필터 결과에서 사라지지
-// 않도록 폴더 필터는 "전체"로 풀어준다 (그 문서가 다른 폴더에 있었더라도 보이게).
+// resets the folder filter to "전체" so the document being read doesn't
+// disappear from the list
 function setTagFilter(tag) {
+  clearSearch();
   activeTag = tag;
   activeDocType = null;
   renderFolderTabs();
@@ -452,14 +442,11 @@ function renderDocList(docs) {
   });
 }
 
-// 문서를 읽는 그 자리에서 바로 태그를 붙이고 뗄 수 있게 — 목록으로 안 돌아가도 됨.
-// allDocuments는 세션당 한 번만 받아온 캐시라, 여기서 바꾼 태그를 그 캐시에도 반영해줘야
-// 목록으로 돌아갔을 때 카드의 태그 칩이 방금 편집한 내용과 어긋나지 않는다.
 function syncDocTagsCache(docId, tags) {
   const cached = allDocuments.find((d) => d.id === docId);
   if (cached) cached.tags = tags;
-  applyFilters(); // 카드 태그 칩을 최신 상태로 다시 그리는데, 이때 현재 열려있는 카드의 강조가 풀림
-  markActiveDocCard(docId); // 그래서 바로 다시 표시해줌
+  applyFilters(); // clears the active-card highlight, so re-mark it right after
+  markActiveDocCard(docId);
 }
 
 function renderReaderTags(docId, tags, newTag) {
@@ -469,7 +456,7 @@ function renderReaderTags(docId, tags, newTag) {
     const chip = document.createElement("span");
     chip.className = "tag-chip tag-chip--removable";
     if (tag === activeTag) chip.classList.add("is-active-filter");
-    if (tag === newTag) chip.classList.add("is-new"); // 방금 추가된 칩만 pill-in으로 등장
+    if (tag === newTag) chip.classList.add("is-new");
     chip.innerHTML = `<button type="button" class="tag-chip-label"></button><button type="button" class="tag-chip-remove" aria-label="${tag} 태그 삭제">×</button>`;
     chip.querySelector(".tag-chip-label").textContent = tag;
     chip.querySelector(".tag-chip-label").setAttribute(
@@ -479,7 +466,7 @@ function renderReaderTags(docId, tags, newTag) {
     chip.querySelector(".tag-chip-label").addEventListener("click", () => {
       if (tag === activeTag) clearTagFilter();
       else setTagFilter(tag);
-      renderReaderTags(docId, tags); // 방금 누른 칩의 강조 상태(is-active-filter)를 즉시 반영
+      renderReaderTags(docId, tags);
     });
     chip.querySelector(".tag-chip-remove").addEventListener("click", async () => {
       const res = await fetch(`/documents/${encodeURIComponent(docId)}/tags/${encodeURIComponent(tag)}`, {
@@ -513,7 +500,7 @@ function docReaderSkeleton() {
     </div>`;
 }
 
-async function openDocument(docId) {
+async function openDocument(docId, scrollQuery) {
   markActiveDocCard(docId);
   docReaderEmpty.hidden = true;
   docReaderBody.hidden = false;
@@ -526,8 +513,8 @@ async function openDocument(docId) {
 
     docReaderBody.innerHTML = `
       <header class="doc-reader-head">
+        <p class="doc-reader-eyebrow"></p>
         <h2 class="doc-reader-title"></h2>
-        <p class="doc-reader-file"></p>
       </header>
       <div class="doc-reader-tags">
         <div class="tag-chip-list" id="reader-tag-list"></div>
@@ -539,20 +526,17 @@ async function openDocument(docId) {
       <div class="agent-text doc-reader-content"></div>
     `;
     docReaderBody.querySelector(".doc-reader-title").textContent = doc.title;
-    docReaderBody.querySelector(".doc-reader-file").textContent =
-      `${doc.id} · ${formatDocDate(doc.created_at)}`;
+    docReaderBody.querySelector(".doc-reader-eyebrow").textContent =
+      `${DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type} · ${formatDocDate(doc.created_at)}`;
     const contentEl = docReaderBody.querySelector(".doc-reader-content");
     renderMarkdownInto(contentEl, doc.content);
     wireTocLinks(contentEl);
     renderReaderTags(doc.id, doc.tags);
-    // restart the settle-in animation on every load — the class was already removed
-    // by the skeleton swap above, so a fresh reflow + re-add is enough to retrigger it
+    // force a reflow so removing+re-adding the class restarts the animation
     docReaderBody.classList.remove("is-entering");
     void docReaderBody.offsetWidth;
     docReaderBody.classList.add("is-entering");
 
-    // 태그 추가 UI: "+ 태그" 고스트 칩을 클릭하면 같은 자리에서 칩 모양 입력으로 바뀜 —
-    // 별도 제출 버튼 없이 Enter로 저장, Escape/빈 채로 blur하면 다시 고스트 칩으로 되돌아감
     const tagAddForm = docReaderBody.querySelector("#tag-add-form");
     const tagAddTrigger = docReaderBody.querySelector("#tag-add-trigger");
     const tagAddInput = docReaderBody.querySelector("#tag-add-input");
@@ -573,7 +557,7 @@ async function openDocument(docId) {
       if (e.key === "Escape") resetTagInput();
     });
     tagAddInput.addEventListener("blur", () => {
-      if (!tagAddInput.value) resetTagInput(); // 타이핑 중인 내용은 blur로 지우지 않음
+      if (!tagAddInput.value) resetTagInput();
     });
 
     tagAddForm.addEventListener("submit", async (e) => {
@@ -593,12 +577,13 @@ async function openDocument(docId) {
       }
     });
     docReaderScroll.scrollTop = 0;
+    if (scrollQuery) scrollToQueryMatch(contentEl, scrollQuery);
   } catch (err) {
     docReaderBody.innerHTML = `<p class="doc-reader-status status-error">문서를 불러오지 못했습니다.</p>`;
   }
 }
 
-async function goToDocument(docId) {
+async function goToDocument(docId, scrollQuery) {
   activatePanel("documents");
   railTabs.forEach((tab) => {
     const isActive = tab.dataset.panel === "documents";
@@ -606,13 +591,36 @@ async function goToDocument(docId) {
     tab.tabIndex = isActive ? 0 : -1;
   });
   await ensureDocumentsLoaded().catch(() => {});
-  openDocument(docId);
+  openDocument(docId, scrollQuery);
 }
 
-// ---- search panel ----
-const searchInput = document.getElementById("search-input");
-const searchResultsEl = document.getElementById("search-results");
-let searchDebounce = null;
+// walks text nodes instead of regexing the HTML string, which would break tags
+function scrollToQueryMatch(container, query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return;
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    const idx = node.textContent.toLowerCase().indexOf(q);
+    if (idx === -1) continue;
+    const range = document.createRange();
+    range.setStart(node, idx);
+    range.setEnd(node, idx + q.length);
+    const mark = document.createElement("mark");
+    mark.className = "jump-highlight";
+    range.surroundContents(mark);
+    mark.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => {
+      const parent = mark.parentNode;
+      if (!parent) return;
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    }, 2600);
+    return;
+  }
+}
+
+const docSearchInput = document.getElementById("doc-search-input");
 
 function highlightSnippet(snippet, start, end) {
   const safeStart = Math.max(0, Math.min(start, snippet.length));
@@ -624,76 +632,65 @@ function highlightSnippet(snippet, start, end) {
   );
 }
 
-function renderSearchResults(hits, query) {
+function clearSearch() {
+  activeQuery = "";
+  docSearchInput.value = "";
+}
+
+function renderDocSearchHits(hits, query) {
   if (hits.length === 0) {
-    searchResultsEl.innerHTML = `<p class="search-hint">“${escapeHtml(query)}”에 대한 결과가 없습니다.</p>`;
+    docListEl.innerHTML = `<p class="doc-list-status">“${escapeHtml(query)}”에 대한 결과가 없습니다.</p>`;
     return;
   }
-  searchResultsEl.innerHTML = "";
+  docListEl.innerHTML = "";
   hits.forEach((hit, i) => {
     const card = document.createElement("button");
     card.type = "button";
-    card.className = "search-hit";
+    card.className = "doc-search-hit";
     card.style.setProperty("--i", Math.min(i, 10));
     card.innerHTML = `
-      <p class="search-hit-title"></p>
-      <p class="search-hit-section"></p>
-      <p class="search-hit-snippet"></p>
+      <p class="doc-search-hit-title"></p>
+      <p class="doc-search-hit-section"></p>
+      <p class="doc-search-hit-snippet"></p>
     `;
-    card.querySelector(".search-hit-title").textContent = hit.title;
-    card.querySelector(".search-hit-section").textContent = hit.section || "";
-    card.querySelector(".search-hit-snippet").innerHTML = highlightSnippet(
+    card.querySelector(".doc-search-hit-title").textContent = hit.title;
+    card.querySelector(".doc-search-hit-section").textContent = hit.section || "";
+    card.querySelector(".doc-search-hit-snippet").innerHTML = highlightSnippet(
       hit.snippet,
       hit.match_start,
       hit.match_end
     );
-    card.addEventListener("click", () => goToDocument(hit.doc_id));
-    searchResultsEl.appendChild(card);
+    card.addEventListener("click", () => goToDocument(hit.doc_id, query));
+    docListEl.appendChild(card);
   });
 }
 
-function searchSkeleton() {
-  return Array.from({ length: 3 })
-    .map(
-      () => `
-      <div class="skeleton-card" aria-hidden="true">
-        <div class="skeleton-line w-40"></div>
-        <div class="skeleton-line w-90"></div>
-        <div class="skeleton-line w-60"></div>
-      </div>`
-    )
-    .join("");
-}
-
-async function runSearch(query) {
-  if (!query) {
-    searchResultsEl.innerHTML = `<p class="search-hint">궁금한 개념을 입력해보세요.</p>`;
-    return;
-  }
-  searchResultsEl.innerHTML = searchSkeleton();
+// tags each request so a slow response can't overwrite a newer query's results
+async function runDocSearch(query) {
+  const requestId = ++searchRequestId;
+  docListEl.innerHTML = docListSkeleton(3);
   try {
     const res = await fetch(`/search?q=${encodeURIComponent(query)}`);
     if (!res.ok) throw new Error("search failed");
     const data = await res.json();
-    renderSearchResults(data.hits, query);
+    if (requestId !== searchRequestId) return;
+    renderDocSearchHits(data.hits, query);
+    docCountTag.textContent = `${data.hits.length}개 결과`;
   } catch (err) {
-    searchResultsEl.innerHTML = `<p class="search-hint status-error">검색에 실패했습니다.</p>`;
+    if (requestId !== searchRequestId) return;
+    docListEl.innerHTML = `<p class="doc-list-status status-error">검색에 실패했습니다.</p>`;
   }
 }
 
-document.getElementById("search-form").addEventListener("submit", (e) => e.preventDefault());
-searchInput.addEventListener("input", () => {
+docSearchInput.addEventListener("input", () => {
   clearTimeout(searchDebounce);
-  const q = searchInput.value.trim();
-  searchDebounce = setTimeout(() => runSearch(q), 300);
+  const q = docSearchInput.value.trim();
+  searchDebounce = setTimeout(() => {
+    activeQuery = q;
+    applyFilters();
+  }, 300);
 });
 
-// =====================================================================
-// chat panel — unchanged behavior, just lives inside #panel-chat now.
-// every turn is a timeline row: a growth-line cell (dot + connector) driven purely by
-// `kind`, and a content cell the caller fills in. the dot color is the single place
-// turn-type is color-coded — keeps the content itself uncluttered.
-// =====================================================================
 function scrollToBottom() {
   transcript.scrollTop = transcript.scrollHeight;
 }
@@ -722,20 +719,21 @@ function appendTurn(turn) {
 function addUserTurn(text) {
   const turn = createTurn("user");
   const content = turn.querySelector(".turn-content");
-  content.innerHTML = `<p class="turn-body"></p>`;
+  content.innerHTML = `<p class="turn-label">you</p><p class="turn-body"></p>`;
   content.querySelector(".turn-body").textContent = text;
   appendTurn(turn);
 }
 
 function addPendingTurn() {
   const turn = createTurn("pending");
-  turn.querySelector(".turn-content").innerHTML = `<span class="pending-text">판단하는 중</span>`;
+  turn.querySelector(".turn-content").innerHTML = `
+    <span class="typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+    <span class="pending-text">생각하는 중</span>
+  `;
   return appendTurn(turn);
 }
 
 function addAgentTurn(data) {
-  // saved_documents에는 이번 턴에 실제로 파일로 저장된 문서만 들어온다(서버가 상태 채널로
-  // 구조화해 내려줌) — 프론트에서 걸러낼 게 없다.
   const filedDocs = data.saved_documents || [];
   const hasFiled = filedDocs.length > 0;
   const hasAnswer = Array.isArray(data.tools_used) && data.tools_used.includes("answer_question");
@@ -751,8 +749,7 @@ function addAgentTurn(data) {
       <div class="mindmap-mount"></div>
     `;
     const mount = content.querySelector(".mindmap-mount");
-    // renderMindmapInto가 mind-elixir를 처음 쓸 때만 동적으로 로드하는데, 그 다운로드가
-    // 끝나기 전에 이 턴이 스크롤 밖으로 나가있을 수 있어 렌더 완료 후 다시 스크롤해준다.
+    // render is async, so scroll again once it's actually mounted
     window.renderMindmapInto(mount, data.mindmap_plaintext).then(scrollToBottom);
   } else if (hasFiled) {
     const stack = document.createElement("div");
@@ -778,9 +775,38 @@ function addAgentTurn(data) {
       <div class="agent-text"></div>
     `;
     renderMarkdownInto(content.querySelector(".agent-text"), data.answer);
+    const sources = data.sources || [];
+    if (sources.length) {
+      const list = document.createElement("div");
+      list.className = "sources";
+      sources.forEach((src) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "source-chip";
+        chip.innerHTML = `<span class="source-chip-dot"></span>`;
+        chip.append(src);
+        // doc_id is the same source_path chain.py stamps on vector chunks — opens
+        // directly, no lookup needed
+        chip.addEventListener("click", () => goToDocument(src));
+        list.appendChild(chip);
+      });
+      content.appendChild(list);
+    }
   } else {
-    content.innerHTML = `<div class="agent-text"></div>`;
+    content.innerHTML = `
+      <p class="turn-label">gardener</p>
+      <div class="agent-text"></div>
+    `;
     renderMarkdownInto(content.querySelector(".agent-text"), data.answer);
+  }
+
+  const recall = data.recall || [];
+  if (recall.length) {
+    const block = document.createElement("div");
+    block.className = "recall-block";
+    block.innerHTML = `<span aria-hidden="true">🌱</span> <b>다시 꺼내볼 것</b> — `;
+    block.append(recall.join(", "));
+    content.appendChild(block);
   }
 
   appendTurn(turn);
@@ -802,19 +828,17 @@ function addErrorTurn(message, retryText) {
   announcer.textContent = message;
 }
 
-// ---- send flow ----
 let isPending = false;
 
-// Talks to /converse for a given message. Does NOT add a user turn — the user turn
-// for `message` must already be on screen (either just typed, or from the failed attempt
-// a retry is re-trying), so retries don't duplicate the user bubble.
+// doesn't add the user turn itself — caller must already have it on screen
+// (typed, or a retry) so retries don't duplicate the bubble
 async function requestReply(message) {
   if (isPending) return;
   isPending = true;
   submitBtn.disabled = true;
 
   const pending = addPendingTurn();
-  announcer.textContent = "에이전트가 판단하는 중입니다.";
+  announcer.textContent = "에이전트가 생각하는 중입니다.";
 
   try {
     const res = await fetch("/converse", {
@@ -846,8 +870,6 @@ function sendMessage(message) {
   requestReply(message);
 }
 
-// grows the textarea up to the CSS max-height (~3 lines) as the user types past one
-// line, then lets it scroll internally — mirrors a chat composer, not a fixed-height field
 function autoResizeInput() {
   input.style.height = "auto";
   input.style.height = `${input.scrollHeight}px`;
@@ -868,10 +890,11 @@ input.addEventListener("input", () => {
   autoResizeInput();
 });
 
-// Enter sends, Shift+Enter inserts a newline — textarea's own default (always a
-// newline) would otherwise never submit the form
+// isComposing / keyCode 229: an IME (e.g. Hangul) also fires Enter to confirm the
+// character being composed — without this guard, submitting mid-composition drops
+// the last character
 input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
     e.preventDefault();
     composer.requestSubmit();
   }
@@ -883,8 +906,6 @@ examples.addEventListener("click", (e) => {
   sendMessage(btn.textContent);
 });
 
-// ---- new chat: fresh thread_id, cleared transcript. leaves the previous thread's
-// history on the server untouched — it just stops being the one this tab talks to ----
 const newChatBtn = document.getElementById("new-chat-btn");
 
 function resetChat() {
@@ -910,11 +931,10 @@ newChatBtn.addEventListener("click", resetChat);
 submitBtn.disabled = true;
 loadCorpus();
 
-// deep-linkable panels: #documents / #search open the panel, #documents/<id> opens a document
 const [initialPanel, initialDocId] = location.hash.replace("#", "").split("/");
-if (initialPanel === "documents" || initialPanel === "search") {
-  activatePanel(initialPanel);
-  if (initialPanel === "documents" && initialDocId) {
-    ensureDocumentsLoaded().then(() => openDocument(initialDocId));
-  }
+if (initialPanel === "chat") {
+  activatePanel("chat");
+} else {
+  ensureDocumentsLoaded().catch(() => {});
+  if (initialDocId) ensureDocumentsLoaded().then(() => openDocument(initialDocId));
 }

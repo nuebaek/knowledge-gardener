@@ -1,18 +1,3 @@
-/* ---- tokens ----
-   signature: a growth line runs down the transcript — every turn plants a node on it,
-   colored by what actually happened (asked / answered / filed / failed). moss is the
-   agent's own voice, amber is reserved only for the moment something gets filed away.
-   light is the base; dark follows the system automatically — no manual toggle.
-
-   type: one gothic (sans) family, Pretendard, end to end — titles and body both,
-   hierarchy carried by weight/size/color rather than a second typeface. It also fixes
-   a real bug: Inter has no Hangul glyphs, so every piece of Korean text on this page
-   was silently falling back to the OS system font regardless of what --sans said.
-   JetBrains Mono stays for meta/code/labels, where its engineering register is right.
-
-   type scale: 11 / 13 / 15 / 16 / 20px — meta, caption, control, body, title.
-   spacing: 4px base grid throughout (0.25rem steps). radius: 6px controls, 8px cards,
-   999px pills, 50% dots — two tiers, nothing in between. */
 :root {
   --bg: #f7f7f5;
   --bg-raised: #ffffff;
@@ -26,6 +11,7 @@
 
   --moss: #3f6b31;
   --moss-soft: rgba(63, 107, 49, 0.1);
+  --moss-contrast: #f7f7f5;
   --amber: #96631a;
   --amber-soft: rgba(150, 99, 26, 0.1);
   --rust: #a23f2b;
@@ -34,16 +20,14 @@
   --rule: rgba(20, 21, 15, 0.08);
   --rule-strong: rgba(20, 21, 15, 0.15);
 
-  --shadow-raised: 0 0 0 1px rgba(20, 21, 15, 0.05), 0 1px 2px -1px rgba(20, 21, 15, 0.07),
-    0 2px 6px rgba(20, 21, 15, 0.05);
+  --shadow-raised: 0 0 0 1px rgba(20, 21, 15, 0.09), 0 1px 2px -1px rgba(20, 21, 15, 0.07),
+    0 2px 6px rgba(20, 21, 15, 0.06);
 
   --radius-control: 6px;
   --radius-card: 8px;
+  --radius-bubble: 14px;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  /* press-release "snap": near-critically-damped with a hint of overshoot — the return
-     half of a tap, not a UI fade. see the apple-design craft-pass note near the bottom
-     of this file for where/why this is used instead of --ease-out. */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   --display: "Pretendard", -apple-system, "Segoe UI", sans-serif;
@@ -65,6 +49,7 @@
 
     --moss: #8fae76;
     --moss-soft: rgba(143, 174, 118, 0.14);
+    --moss-contrast: #12200d;
     --amber: #d0a052;
     --amber-soft: rgba(208, 160, 82, 0.14);
     --rust: #c17a63;
@@ -106,7 +91,6 @@ body {
   height: 100%;
 }
 
-/* ---- accessibility utility ---- */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -119,27 +103,20 @@ body {
   border: 0;
 }
 
-/* ---- shell ----
-   rail (fixed) + one active panel at a time. panels are full siblings, not routes —
-   switching is instant, no navigation cost, matching how someone actually moves between
-   "ask something" / "read a source" / "find a passage" while studying. */
 .app {
   height: 100%;
   display: flex;
 }
 
-/* ---- rail: garden-tool row, not an icon dock ----
-   each destination is a growth-dot + label, the same visual unit the chat timeline uses
-   for a turn. picking a panel isn't chrome navigation here, it's "which bed am I tending." */
 .rail {
   flex: none;
-  width: 4.75rem;
+  width: 4rem;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 1.25rem 0 1rem;
+  padding: 1rem 0 0.875rem;
   border-right: 1px solid var(--rule);
-  background: var(--bg);
+  background: var(--bg-raised);
 }
 
 .rail-mark {
@@ -147,14 +124,22 @@ body {
   margin-bottom: 1.75rem;
 }
 
-.rail-mark-dot {
+.rail-mark-sprout {
   display: block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--moss);
-  box-shadow: 0 0 14px 3px var(--moss-soft);
+  overflow: visible;
+  transform-origin: 50% 100%;
   animation: breathe 2.4s ease-in-out infinite;
+}
+
+.rail-mark-leaf {
+  fill: var(--moss);
+}
+
+.rail-mark-stem {
+  fill: none;
+  stroke: var(--moss);
+  stroke-width: 3;
+  stroke-linecap: round;
 }
 
 .rail-tabs {
@@ -165,18 +150,14 @@ body {
   gap: 0.4rem;
 }
 
-/* one shared bar that app.js spring-animates to the active tab's position, instead of
-   each tab owning its own ::before — this is what makes the selection *move* between
-   tabs (like a segmented-control thumb) instead of vanishing on one and popping on the
-   next. base position/size is desktop-vertical; .rail-indicator--horizontal below is the
-   mobile-folded variant app.js toggles on. transform is JS-driven every frame while the
-   spring is settling, so no CSS transition here — that would fight the spring. */
+/* transform is JS-driven every frame while the spring is settling — no CSS
+   transition here, it would fight the spring */
 .rail-indicator {
   position: absolute;
   left: -0.5rem;
   top: 0;
   width: 2px;
-  height: 1.35rem;
+  height: 1.5rem;
   border-radius: 0 2px 2px 0;
   background: var(--moss);
   pointer-events: none;
@@ -186,11 +167,11 @@ body {
 .rail-tab {
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  width: 3.75rem;
-  padding: 0.5rem 0.25rem;
+  justify-content: center;
+  width: 2.625rem;
+  height: 2.625rem;
+  padding: 0;
   background: none;
   border: none;
   border-radius: var(--radius-control);
@@ -213,9 +194,29 @@ body {
 }
 
 .rail-tab-label {
+  position: absolute;
+  left: calc(100% + 0.5rem);
+  top: 50%;
+  transform: translate(-4px, -50%);
+  white-space: nowrap;
   font-family: var(--mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.06em;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--bg);
+  background: var(--ink);
+  padding: 0.3rem 0.55rem;
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-raised);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+  transition: opacity 0.14s var(--ease-out), transform 0.14s var(--ease-out);
+}
+
+.rail-tab:hover .rail-tab-label,
+.rail-tab:focus-visible .rail-tab-label {
+  opacity: 1;
+  transform: translate(0, -50%);
 }
 
 .rail-tab:hover {
@@ -258,15 +259,6 @@ body {
   text-wrap: balance;
 }
 
-/* ---- panel: one active view, full remaining space ----
-   switching which panel is visible is instant — [hidden] flips straight to
-   display:none, no transition, no navigation cost. (an entrance fade+scale was tried
-   here and reverted 2026-07-20 — on a full panel it read as the whole screen
-   "wobbling" on load rather than a subtle settle, especially stacked with the load-time
-   layout correction the floating-chrome experiment was also doing at the time. small,
-   contained elements — doc-card, search-hit, tag-filter-pill — keep their own
-   materialize-in animations below; a full-panel version of the same idea was too much
-   motion for too little payoff.) */
 .panel {
   flex: 1;
   min-width: 0;
@@ -277,7 +269,6 @@ body {
   overflow: hidden;
 }
 
-/* ---- panel header: shared by chat / documents / search ---- */
 .panel-head {
   flex: none;
   padding: 1.25rem clamp(1.25rem, 4vw, 2.5rem) 1rem;
@@ -332,8 +323,6 @@ body {
   line-height: 1.7;
 }
 
-/* new chat starts a fresh thread_id — same bordered/mono control language as
-   .retry-btn and .chip-example, just neutral (moss) instead of rust/hover-moss */
 .new-chat-btn {
   flex: none;
   align-self: center;
@@ -374,7 +363,6 @@ body {
   outline-offset: 2px;
 }
 
-/* ---- transcript ---- */
 .transcript {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -390,29 +378,33 @@ body {
   gap: 1.25rem;
 }
 
-/* ---- empty state ----
-   the seed previews the rail it will become: once the first turn lands, this exact
-   dot+line becomes the top of the timeline. the empty page is a promise, not a blank. */
 .empty {
   margin: auto 0;
   padding: 2.5rem 0;
   text-align: center;
 }
 
-.empty-seed {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+.empty-sprout {
+  display: block;
   margin: 0 auto 1.5rem;
+  overflow: visible;
+  transform-origin: 50% 100%;
+  animation: breathe 2.4s ease-in-out infinite;
 }
 
-.empty-glow {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--moss);
-  box-shadow: 0 0 18px 4px var(--moss-soft);
-  animation: breathe 2.4s ease-in-out infinite;
+.empty-sprout-leaf {
+  fill: var(--moss);
+}
+
+.empty-sprout-stem {
+  fill: none;
+  stroke: var(--moss);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.empty-sprout-seed {
+  fill: var(--moss);
 }
 
 @keyframes breathe {
@@ -426,19 +418,6 @@ body {
   }
 }
 
-.empty-stub {
-  width: 2px;
-  height: 1.5rem;
-  margin-top: 0.5rem;
-  background: var(--rule);
-}
-
-/* ---- sprout mark: the one elaborate moment in the whole app ----
-   everywhere else the growth-line stays a plain dot — this is the single place it's
-   allowed to actually look like something growing. stem draws in with a dash-offset
-   wipe, the two leaves unfurl just after, the seed settles into the same breathing
-   pulse the rail/timeline dots already use. reserved for the chat panel's blank page,
-   the one screen this app is actually built around. */
 .sprout-mark {
   display: block;
   margin: 0 auto 1.5rem;
@@ -547,13 +526,16 @@ body {
   transition-duration: 0.05s;
 }
 
-/* ---- turn: shared timeline row ----
-   every turn is a two-column row: a growth-line cell (dot + connector) and the content.
-   the dot's color is the only place turn-type is color-coded — everything else stays flat. */
 .turn {
   display: flex;
   gap: 0.75rem;
+  max-width: 78%;
+  align-self: flex-start;
   animation: rise 0.32s var(--ease-out) both;
+}
+
+.kind-user {
+  align-self: flex-end;
 }
 
 @keyframes rise {
@@ -568,11 +550,7 @@ body {
 }
 
 .turn-rail {
-  flex: none;
-  width: 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: none;
 }
 
 .rail-dot {
@@ -617,7 +595,6 @@ body {
   animation: railPulse 1.3s ease-in-out infinite;
 }
 
-/* mindmap도 살아있는(생성된) 응답이라 answer와 같은 moss를 씀 — 새 색 안 늘림 */
 .kind-mindmap .rail-dot {
   background: var(--moss);
 }
@@ -635,7 +612,6 @@ body {
   overflow: hidden;
 }
 
-
 @keyframes railPulse {
   0%, 80%, 100% {
     opacity: 0.3;
@@ -648,17 +624,20 @@ body {
 }
 
 .turn-content {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
-/* ---- user turn ---- */
+.kind-user .turn-label,
+.kind-plain .turn-label,
+.turn-label.is-answer {
+  display: none;
+}
+
 .kind-user .turn-content {
-  padding: 0.5rem 0.75rem;
-  background: var(--bg-raised);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-raised);
+  padding: 0.55rem 0.9rem;
+  background: var(--moss);
+  border-radius: var(--radius-bubble) var(--radius-bubble) 4px var(--radius-bubble);
 }
 
 .kind-user .turn-body {
@@ -666,11 +645,18 @@ body {
   font-family: var(--mono);
   font-size: 0.9375rem;
   line-height: 1.6;
-  color: var(--ink);
+  color: var(--moss-contrast);
   white-space: pre-wrap;
 }
 
-/* ---- agent turn: shared prose (plain / answer) ---- */
+.kind-plain .turn-content,
+.kind-answer .turn-content {
+  padding: 0.7rem 1rem;
+  background: var(--bg-raised);
+  border-radius: var(--radius-bubble) var(--radius-bubble) var(--radius-bubble) 4px;
+  box-shadow: var(--shadow-raised);
+}
+
 .agent-text {
   font-family: var(--sans);
   font-size: 1rem;
@@ -740,8 +726,6 @@ body {
   color: var(--moss);
 }
 
-/* headings/tables/images only really show up in the document reader, but living on
-   .agent-text means a chat answer that happens to include them renders consistently too */
 .agent-text h1,
 .agent-text h2,
 .agent-text h3,
@@ -813,7 +797,74 @@ body {
   padding: 0.2em 0;
 }
 
-/* label above "answer" turns */
+.recall-block {
+  margin: 1em 0;
+  padding: 0.6rem 0.85rem;
+  background: var(--amber-soft);
+  border-left: 2px solid var(--amber);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  font-size: 0.875rem;
+  color: var(--ink-dim);
+}
+
+.recall-block > *:first-child {
+  margin-top: 0;
+}
+
+.recall-block > *:last-child {
+  margin-bottom: 0;
+}
+
+.turn-content > .recall-block {
+  margin: 0.6rem 0 0;
+}
+
+.sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--ink-faint);
+  background: var(--bg-inset);
+  border: none;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: color 0.14s var(--ease-out), background 0.14s var(--ease-out),
+    transform 0.4s var(--ease-spring);
+}
+
+.source-chip:hover {
+  color: var(--moss);
+  background: var(--moss-soft);
+}
+
+.source-chip:active {
+  transform: scale(0.96);
+  transition-duration: 0.05s;
+}
+
+.source-chip:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+.source-chip-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--moss);
+}
+
 .turn-label {
   font-family: var(--sans);
   font-weight: 600;
@@ -827,7 +878,21 @@ body {
   color: var(--moss);
 }
 
-/* ---- agent turn: filed — the one boxed sub-component, on purpose ---- */
+.kind-user .turn-label {
+  color: var(--ink-faint);
+}
+
+.kind-plain .turn-label {
+  color: var(--moss);
+}
+
+.kind-filed .turn-content {
+  padding: 0.7rem 1rem;
+  background: var(--bg-raised);
+  border-radius: var(--radius-bubble) var(--radius-bubble) var(--radius-bubble) 4px;
+  box-shadow: var(--shadow-raised);
+}
+
 .kind-filed .turn-label {
   color: var(--amber);
 }
@@ -873,26 +938,62 @@ body {
   text-wrap: pretty;
 }
 
-/* ---- pending turn ---- */
 .kind-pending .turn-content {
   display: flex;
   align-items: center;
-  padding-top: 0.35em;
+  gap: 0.6rem;
+  padding: 0.7rem 1rem;
+  background: var(--bg-raised);
+  border-radius: var(--radius-bubble) var(--radius-bubble) var(--radius-bubble) 4px;
+  box-shadow: var(--shadow-raised);
+}
+
+.typing-dots {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--moss);
+  animation: typingBounce 1.1s ease-in-out infinite;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typingBounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
 }
 
 .pending-text {
   font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.04em;
-  color: var(--ink-mute);
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+  color: var(--ink-dim);
 }
 
-/* ---- error turn ---- */
 .kind-error .turn-content {
   padding: 0.75rem 1rem;
   border-left: 2px solid var(--rust);
   background: var(--rust-soft);
-  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  border-radius: var(--radius-bubble) var(--radius-bubble) var(--radius-bubble) 4px;
 }
 
 .error-text {
@@ -935,7 +1036,6 @@ body {
   outline-offset: 2px;
 }
 
-/* ---- composer ---- */
 .composer {
   flex: none;
   padding: 1rem clamp(1.25rem, 4vw, 2.5rem) 1.25rem;
@@ -951,23 +1051,15 @@ body {
   gap: 0.75rem;
   background: var(--bg-raised);
   border: 1px solid var(--rule-strong);
-  border-radius: var(--radius-card);
-  padding: 0.6rem 1rem;
+  border-radius: var(--radius-bubble);
   box-shadow: var(--shadow-raised);
+  padding: 0.6rem 1rem;
   transition: border-color 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
 }
 
 .prompt-bar:focus-within {
   border-color: var(--moss);
   box-shadow: var(--shadow-raised), 0 0 0 3px var(--moss-soft);
-}
-
-/* static, not blinking — a plain prompt marker, not a cursor pretending to wait */
-.prompt-caret {
-  font-family: var(--mono);
-  color: var(--moss);
-  font-weight: 600;
-  padding-bottom: 0.3rem;
 }
 
 .prompt-bar textarea {
@@ -982,8 +1074,6 @@ body {
   font-size: 0.9375rem;
   line-height: 1.5;
   padding: 0.3rem 0;
-  /* one line by default, grows up to ~3 before it scrolls internally — same idea
-     as Claude's own composer, just capped so the rest of the transcript stays put */
   max-height: 4.8rem;
   overflow-y: auto;
 }
@@ -997,24 +1087,21 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 2.5rem;
-  min-height: 2.5rem;
-  background: none;
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius-control);
-  color: var(--ink-faint);
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  background: var(--moss);
+  border: none;
+  border-radius: 50%;
+  color: var(--moss-contrast);
   font-family: var(--mono);
   font-size: 0.9375rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem;
   cursor: pointer;
-  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
-    background 0.15s var(--ease-out), transform 0.4s var(--ease-spring), opacity 0.15s var(--ease-out);
+  transition: opacity 0.15s var(--ease-out), transform 0.4s var(--ease-spring);
 }
 
 .prompt-bar button:hover:not(:disabled) {
-  color: var(--bg);
-  background: var(--moss);
-  border-color: var(--moss);
+  transform: scale(1.06);
 }
 
 .prompt-bar button:active:not(:disabled) {
@@ -1033,10 +1120,6 @@ body {
   outline-offset: 2px;
 }
 
-/* ---- documents panel: index-card list + reader ----
-   the reader sits on --bg-raised-2 (the same sage tint the "filed" tabs use elsewhere)
-   instead of --bg-raised — a quiet temperature shift that separates "reading a source"
-   from "reading a chat bubble" without introducing a new hue. */
 .doc-filter-row {
   flex: none;
   display: flex;
@@ -1050,12 +1133,12 @@ body {
 .doc-folder-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 2px;
+  background: var(--bg-inset);
+  border-radius: calc(var(--radius-control) + 3px);
+  padding: 3px;
 }
 
-/* set by clicking a tag in the reader — narrows the list to that tag on top of
-   whatever folder is selected. its own × is the only way to clear it, same
-   "chip that carries its own dismissal" shape as a removable tag-chip. */
 .tag-filter-pill {
   flex: none;
   display: inline-flex;
@@ -1073,10 +1156,6 @@ body {
   transition: opacity 0.15s var(--ease-out), transform 0.4s var(--ease-spring);
 }
 
-/* the pill only ever appears/disappears via [hidden] toggling (never a fresh DOM
-   node), so this keyed off :not([hidden]) restarts every time it's shown — same
-   materialize-not-pop idea as .turn's rise, just with a touch of scale-spring since
-   this one is a discrete "a filter just turned on" event, not a list item settling in */
 @keyframes pill-in {
   from {
     opacity: 0;
@@ -1110,18 +1189,19 @@ body {
 .folder-tab {
   font-family: var(--mono);
   font-size: 0.75rem;
+  font-weight: 600;
   color: var(--ink-faint);
-  background: var(--bg-raised);
-  border: 1px solid var(--rule);
-  border-radius: 999px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
   padding: 0.3rem 0.7rem;
   cursor: pointer;
-  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
-    background 0.15s var(--ease-out), transform 0.4s var(--ease-spring);
+  transition: color 0.15s var(--ease-out), background 0.15s var(--ease-out),
+    box-shadow 0.15s var(--ease-out), transform 0.4s var(--ease-spring);
 }
 
 .folder-tab:hover {
-  border-color: var(--rule-strong);
+  color: var(--ink-dim);
 }
 
 .folder-tab:active {
@@ -1136,8 +1216,8 @@ body {
 
 .folder-tab[aria-selected="true"] {
   color: var(--moss);
-  border-color: var(--moss);
-  background: var(--moss-soft);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-raised);
 }
 
 .doc-layout {
@@ -1167,13 +1247,10 @@ body {
   text-align: center;
 }
 
-/* failed fetches read as failures, not neutral status text — same rust the chat
-   error turn already uses, so a broken load looks consistent everywhere it happens */
 .status-error {
   color: var(--rust);
 }
 
-/* ---- skeleton loaders: shaped like the content that's about to land, not a spinner ---- */
 @keyframes shimmer {
   0%, 100% {
     opacity: 0.5;
@@ -1248,8 +1325,6 @@ body {
     box-shadow 0.15s var(--ease-out), transform 0.35s var(--ease-spring);
 }
 
-/* lift on hover, dip further on press — the compound feedback reads as one card
-   actually rising off the list rather than two unrelated color/scale changes */
 .doc-card:hover {
   border-color: var(--rule-strong);
   box-shadow: var(--shadow-raised);
@@ -1319,16 +1394,11 @@ body {
   padding: 0.1rem 0.5rem;
 }
 
-/* in the reader, a filed-away tag doubles as a filter trigger — clicking the label
-   (not the × ) narrows the doc list to that tag. filled solid instead of moss-soft
-   so "this is the tag currently narrowing the list" reads at a glance. */
 .tag-chip.is-active-filter {
   color: var(--bg);
   background: var(--moss);
 }
 
-/* the just-added chip materializes with the same discrete-event pop the
-   tag-filter-pill uses, instead of appearing as a silent DOM diff */
 .tag-chip.is-new {
   animation: pill-in 0.3s var(--ease-spring) both;
 }
@@ -1407,8 +1477,6 @@ body {
   margin: 0 auto;
 }
 
-/* toggled from JS on every document load (class removed + re-added to force a
-   restart) so switching documents reads as new content settling in, not a hard cut */
 .doc-reader-body.is-entering {
   animation: rise 0.22s var(--ease-out) both;
 }
@@ -1419,22 +1487,22 @@ body {
   border-bottom: 1px solid var(--rule-strong);
 }
 
+.doc-reader-eyebrow {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-mute);
+  margin: 0 0 0.5rem;
+}
+
 .doc-reader-title {
   font-family: var(--display);
   font-weight: 700;
   font-size: 1.375rem;
   letter-spacing: -0.02em;
   color: var(--ink);
-  margin: 0 0 0.35rem;
-  text-wrap: balance;
-}
-
-.doc-reader-file {
-  font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.02em;
-  color: var(--ink-mute);
   margin: 0;
+  text-wrap: balance;
 }
 
 .doc-reader-tags {
@@ -1456,9 +1524,6 @@ body {
   align-items: center;
 }
 
-/* dashed = "not planted yet", matching the solid/dashed distinction already used
-   for filed vs. active state elsewhere — sized/shaped exactly like .tag-chip so it
-   reads as part of the same chip family, not a separate form control bolted on. */
 .tag-add-chip {
   display: inline-flex;
   align-items: center;
@@ -1489,8 +1554,6 @@ body {
   outline-offset: 2px;
 }
 
-/* replaces the ghost chip in place on click — solid moss border reads as "editing
-   now", the same meaning moss already carries for active/live state elsewhere */
 .tag-add-input {
   font-family: var(--mono);
   font-size: 0.625rem;
@@ -1522,29 +1585,40 @@ body {
   text-decoration: underline;
 }
 
-/* ---- search panel ---- */
-.search-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+.jump-highlight {
+  background: var(--moss-soft);
+  color: var(--moss);
+  border-radius: 2px;
+  padding: 0 0.15em;
+  font-weight: 600;
+  animation: jumpFlash 1.6s var(--ease-out);
 }
 
-.search-bar {
+@keyframes jumpFlash {
+  0% {
+    background: var(--moss);
+    color: var(--bg);
+  }
+  100% {
+    background: var(--moss-soft);
+    color: var(--moss);
+  }
+}
+
+.doc-search-bar {
   flex: none;
-  margin: 1.25rem clamp(1.25rem, 4vw, 2.5rem) 0;
+  margin: 0 0.75rem 0.6rem;
   display: flex;
   align-items: center;
   gap: 0.6rem;
   background: var(--bg-inset);
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius-card);
-  padding: 0.65rem 0.9rem;
+  padding: 0.6rem 0.85rem;
   transition: border-color 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
 }
 
-.search-bar:focus-within {
+.doc-search-bar:focus-within {
   border-color: var(--moss);
   box-shadow: 0 0 0 3px var(--moss-soft);
 }
@@ -1556,7 +1630,7 @@ body {
   font-size: 1rem;
 }
 
-.search-bar input {
+.doc-search-bar input {
   flex: 1;
   min-width: 0;
   background: none;
@@ -1564,35 +1638,18 @@ body {
   outline: none;
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
 }
 
-.search-bar input::placeholder {
+.doc-search-bar input::placeholder {
   color: var(--ink-mute);
 }
 
-.search-results {
-  flex: 1;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 1rem clamp(1.25rem, 4vw, 2.5rem) 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.search-hint {
-  margin: 3rem auto 0;
-  color: var(--ink-faint);
-  font-size: 0.875rem;
-  text-align: center;
-}
-
-.search-hit {
+.doc-search-hit {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 0.85rem 1rem;
+  padding: 0.7rem 0.8rem;
   background: var(--bg-raised);
   border: 1px solid var(--rule);
   border-radius: var(--radius-card);
@@ -1603,49 +1660,53 @@ body {
     transform 0.35s var(--ease-spring);
 }
 
-.search-hit:hover {
+.doc-search-hit:hover {
   border-color: var(--rule-strong);
   box-shadow: var(--shadow-raised);
   transform: translateY(-1px);
 }
 
-.search-hit:active {
+.doc-search-hit:active {
   transform: translateY(-1px) scale(0.98);
   transition-duration: 0.05s;
 }
 
-.search-hit:focus-visible {
+.doc-search-hit:focus-visible {
   outline: 2px solid var(--moss);
   outline-offset: 2px;
 }
 
-.search-hit-title {
+.doc-search-hit-title {
   font-family: var(--display);
   font-weight: 600;
   font-size: 0.875rem;
   color: var(--ink);
   margin: 0 0 0.15rem;
+  text-wrap: pretty;
 }
 
-.search-hit-section {
+.doc-search-hit-section {
   font-family: var(--mono);
   font-size: 0.625rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-mute);
-  margin: 0 0 0.45rem;
+  margin: 0 0 0.35rem;
 }
 
-.search-hit-snippet {
+.doc-search-hit-snippet {
   font-family: var(--sans);
-  font-size: 0.8125rem;
-  line-height: 1.55;
-  color: var(--ink-dim);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ink-faint);
   margin: 0;
-  text-wrap: pretty;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.search-hit-snippet mark {
+.doc-search-hit-snippet mark {
   background: var(--moss-soft);
   color: var(--moss);
   border-radius: 2px;
@@ -1653,22 +1714,23 @@ body {
   font-weight: 600;
 }
 
-/* ---- motion & accessibility ---- */
 @media (prefers-reduced-motion: reduce) {
   .turn,
   .rail-dot,
-  .rail-mark-dot,
-  .empty-glow,
+  .rail-mark-sprout,
+  .empty-sprout,
   .skeleton-line,
   .sprout-stem,
   .sprout-leaf,
   .sprout-seed,
   .doc-card,
-  .search-hit,
+  .doc-search-hit,
   .doc-reader-body.is-entering,
   .tag-filter-pill,
   .tag-chip.is-new,
-  .tag-add-input {
+  .tag-add-input,
+  .typing-dots span,
+  .jump-highlight {
     animation: none !important;
     transition: none !important;
   }
@@ -1678,7 +1740,12 @@ body {
   .kind-pending .rail-dot {
     opacity: 1;
   }
-  .empty-glow {
+  .typing-dots span {
+    opacity: 1;
+    transform: none;
+  }
+  .rail-mark-sprout,
+  .empty-sprout {
     opacity: 1;
     transform: none;
   }
@@ -1691,7 +1758,6 @@ body {
   }
 }
 
-/* ---- narrow screens: rail folds to a top bar, documents stack list-over-reader ---- */
 @media (max-width: 40rem) {
   .app {
     flex-direction: column;
@@ -1716,13 +1782,26 @@ body {
   }
 
   .rail-tab {
-    flex-direction: row;
     width: auto;
+    height: auto;
+    gap: 0.35rem;
     padding: 0.5rem 0.75rem;
   }
 
-  /* app.js adds this class when the rail folds to a top bar, and switches which axis
-     it drives (translateX along the bottom edge instead of translateY down the side). */
+  .rail-tab-label {
+    position: static;
+    transform: none;
+    opacity: 1;
+    color: var(--ink-mute);
+    background: none;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .rail-tab[aria-selected="true"] .rail-tab-label {
+    color: var(--ink);
+  }
+
   .rail-indicator--horizontal {
     left: 0;
     top: auto;
