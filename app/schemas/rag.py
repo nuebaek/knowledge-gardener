@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class TopicList(BaseModel):
     topics: list[str]
+    umbrella: str = ""
 
 
 class TurnResult(BaseModel):
@@ -28,6 +29,7 @@ class ConverseResponse(BaseModel):
     tools_used: list[str]
     saved_documents: list[SavedDocument] = []
     mindmap_plaintext: str | None = None
+    sources: list[str] = []
 
 
 class ThreadMessage(BaseModel):

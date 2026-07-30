@@ -1,5 +1,9 @@
+MAX_CONTEXT_MESSAGES = 20
+
+
 def flatten_conversation(messages) -> str:
-    return "\n".join(m.content if isinstance(m.content, str) else str(m.content) for m in messages)
+    recent = messages[-MAX_CONTEXT_MESSAGES:]
+    return "\n".join(f"{m.type}: {m.content if isinstance(m.content, str) else str(m.content)}" for m in recent)
 
 
 def serialize_for_daily_note(state: dict) -> str:
@@ -9,14 +13,13 @@ def serialize_for_daily_note(state: dict) -> str:
         lines.append("설명하지 못한 것 (다시 꺼내볼 것):")
         for item in state["seedlings"]:
             lines.append(f"- {item['topic']}: {item['user_wording']}")
-            # source_paths는 finalize에서만 붙는다 — 답이 아니라 근거 위치만 준다.
             for path in item.get("source_paths", []):
                 lines.append(f"  다시 볼 근거: {path}")
     return "\n".join(lines)
 
 
-def new_session(topics: list) -> dict:
-    return {"pending": list(topics), "answered": [], "seedlings": []}
+def new_session(topics: list, umbrella: str = "") -> dict:
+    return {"pending": list(topics), "answered": [], "seedlings": [], "umbrella": umbrella}
 
 
 def apply_verdict(state: dict, topic: str, verdict: str, wording: str) -> dict:
@@ -25,7 +28,7 @@ def apply_verdict(state: dict, topic: str, verdict: str, wording: str) -> dict:
 
     if verdict == "explained":
         answered.append({"topic": topic, "explanation": wording})
-    else:  # partial, skip 둘 다 🌱로 — 구분은 wording 내용이 한다.
+    else:
         seedlings.append({"topic": topic, "user_wording": wording})
 
     return {
