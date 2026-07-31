@@ -12,8 +12,6 @@ from app.core.paths import WRITER_DIR
 from app.rag.chain import apply_fallback, build_llm
 from app.writer.model import DailynoteEntry, WeeklynoteEntry, TilEntry
 
-# ---------------- 프롬프트 ----------------
-
 DAILY_NOTE_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "You are a study-note editor, NOT an author. The input is the user's own explanation of "
@@ -151,7 +149,6 @@ TIL_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
-# ---------------- writer 정의 ----------------
 BASE_DIR = WRITER_DIR
 
 
@@ -184,13 +181,11 @@ def save_docs(dir, filename, entry, body, title, overwrite: bool = False) -> Pat
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(content, encoding="utf-8")
-    # 저장 시점에 바로 카탈로그에 반영
     catalog.upsert_document(out_path, source_type="writer", doc_type=dir, title=title)
     return out_path
 
 
 def save_raw_session(topic: str, learned: str, related_concepts: list[str]) -> Path:
-    """LLM 호출(write_daily_note) 전에 원본을 먼저 저장"""
     today = _date.today()
     slug = slugify(topic)
     out_path = BASE_DIR / "dailynote" / "raw" / f"{today}-{slug}.json"
@@ -201,7 +196,6 @@ def save_raw_session(topic: str, learned: str, related_concepts: list[str]) -> P
     return out_path
 
 
-# daily note
 def write_daily_note(
         topic: str,
         learned: str,
@@ -227,9 +221,7 @@ def write_daily_note(
     return save_docs("dailynote", f"{today}-{slug}", entry, response.content, title=topic)
 
 
-# weekly note
 def write_weekly_note(as_of: str | None = None) -> Path | None:
-    """저장된 파일 경로를 반환. 대상 daily note가 한 건도 없으면 아무것도 안 쓰고 None."""
     ref_date = _date.fromisoformat(as_of) if as_of else _date.today()
     monday = ref_date - timedelta(days=ref_date.weekday())
     sunday = monday + timedelta(days=6)
@@ -275,7 +267,6 @@ def write_weekly_note(as_of: str | None = None) -> Path | None:
     return save_docs("weeklynote", monday.isoformat(), entry, response.content, title=title, overwrite=True)
 
 
-# til
 def write_tilnote(
     what: str,
     learned: str,

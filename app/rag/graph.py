@@ -3,7 +3,7 @@ from langgraph.prebuilt import tools_condition, ToolNode
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app.rag.state import GraphState, StudySessionState
-from app.rag.chain import build_embeddings, build_judge_llm, build_llm, get_vectorstore, search_source_paths, PROMPT, REWRITE_PROMPT, AGENT_SYSTEM_PROMPT
+from app.rag.chain import build_embeddings, build_llm, get_vectorstore, search_source_paths, PROMPT, REWRITE_PROMPT, AGENT_SYSTEM_PROMPT
 from app.rag.nodes import make_nodes, make_agent_node, make_study_node
 
 
@@ -56,7 +56,9 @@ def build_agent_graph(llm=None, tools=None, checkpointer=None, search_sources=No
     llm = llm if llm is not None else build_llm()
     tools = tools if tools is not None else make_tools(llm=llm)
     search_sources = search_sources if search_sources is not None else search_source_paths
-    judge_llm = judge_llm if judge_llm is not None else build_judge_llm()
+    # 스터디 세션 판정은 생성 LLM과 같은 흐름(Cerebras → Haiku 폴백)을 쓴다 — Sonnet은
+    # 오프라인 벤치마크(scripts/benchmark.py 등)의 judge 전용, 실사용 경로엔 안 태운다.
+    judge_llm = judge_llm if judge_llm is not None else llm
     agent_node = make_agent_node(llm, tools, AGENT_SYSTEM_PROMPT)
     study_node, finalize_node, confirm_finalize_node = make_study_node(judge_llm, llm, search_sources)
 

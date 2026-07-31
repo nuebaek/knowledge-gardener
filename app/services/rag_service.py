@@ -26,7 +26,7 @@ def converse(agent_graph, message: str, thread_id: str) -> ConverseResponse:
     start = time.perf_counter()
     try:
         after = agent_graph.invoke({"messages": [("human", message)]}, config=config)
-    except Exception as exc:  # LLM 호출 실패 등
+    except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Agent 실행 실패: {exc}") from exc
     finally:
         logger.info("converse thread_id=%s elapsed_ms=%.0f", thread_id, (time.perf_counter() - start) * 1000)
@@ -40,6 +40,9 @@ def converse(agent_graph, message: str, thread_id: str) -> ConverseResponse:
     saved_documents = [SavedDocument(**doc) for doc in _new_slice(before, after, "saved_documents")]
     mindmaps = _new_slice(before, after, "mindmaps")
     sources_calls = _new_slice(before, after, "sources")
+    # 이번 턴에 패스/부분설명으로 새로 seedling이 된 토픽 — apply_verdict가 seedlings에
+    # 통째로 추가한 걸 그대로 쓰므로, before 이후로 늘어난 만큼만 diff로 잘라낸다.
+    new_seedlings = _new_slice(before, after, "seedlings")
 
     return ConverseResponse(
         answer=_content_text(after["messages"][-1].content),
@@ -47,6 +50,7 @@ def converse(agent_graph, message: str, thread_id: str) -> ConverseResponse:
         saved_documents=saved_documents,
         mindmap_plaintext=mindmaps[-1] if mindmaps else None,
         sources=sources_calls[-1] if sources_calls else [],
+        recall=[s["topic"] for s in new_seedlings],
     )
 
 

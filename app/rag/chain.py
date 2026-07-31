@@ -22,9 +22,10 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-CHROMA_COLLECTION = "cs231n"
+CHROMA_COLLECTION = "cs231n_v2"
+EMBED_MODEL = os.getenv("EMBED_MODEL", "dragonkue/multilingual-e5-small-ko-v2")
 TOP_K = 5
-RELEVANCE_THRESHOLD = 0.42
+RELEVANCE_THRESHOLD = 0.50
 
 
 def study_turn(llm, topic, next_topic, message, conversation) -> TurnResult:
@@ -39,13 +40,26 @@ def study_turn(llm, topic, next_topic, message, conversation) -> TurnResult:
 
 
 @lru_cache(maxsize=1)
-def build_embeddings():
+def build_embeddings(model_name: str | None = None):
     from langchain_huggingface import HuggingFaceEmbeddings
 
+    name = model_name or EMBED_MODEL
+    model_kwargs = {
+        "device": "cuda" if os.getenv("USE_CUDA", "false").lower() == "true" else "cpu",
+        "model_kwargs": {"use_safetensors": True},
+    }
+    encode_kwargs = {"normalize_embeddings": True}
+    query_encode_kwargs = dict(encode_kwargs)
+    # e5 계열은 query:/passage: 접두사 없이 쓰면 성능이 눈에 띄게 떨어진다.
+    if "-e5-" in name:
+        model_kwargs["prompts"] = {"query": "query: ", "passage": "passage: "}
+        encode_kwargs["prompt_name"] = "passage"
+        query_encode_kwargs["prompt_name"] = "query"
     return HuggingFaceEmbeddings(
-        model_name="BAAI/bge-m3",
-        model_kwargs={"device": "cuda" if os.getenv("USE_CUDA", "false").lower() == "true" else "cpu"},
-        encode_kwargs={"normalize_embeddings": True},
+        model_name=name,
+        model_kwargs=model_kwargs,
+        encode_kwargs=encode_kwargs,
+        query_encode_kwargs=query_encode_kwargs,
     )
 
 
@@ -99,10 +113,16 @@ def load_split_docs(rows=None):
     return split_docs
 
 
+def section_path(meta) -> str:
+    return " > ".join(p for p in (meta.get("h1"), meta.get("h2"), meta.get("h3")) if p)
+
+
+def section_key(meta) -> str:
+    return f"{meta.get('source', '?')}#{section_path(meta)}"
+
+
 def inject_header_context(doc) -> None:
-    m = doc.metadata
-    parts = [m.get("h1"), m.get("h2"), m.get("h3")]
-    prefix = " > ".join(p for p in parts if p)
+    prefix = section_path(doc.metadata)
     if prefix and not doc.page_content.lstrip().startswith("#"):
         doc.page_content = f"{prefix}\n\n{doc.page_content}"
 
@@ -122,20 +142,20 @@ def sync_index(vectorstore) -> int:
     return len(pending)
 
 
-def get_vectorstore(embeddings):
+def get_vectorstore(embeddings, collection: str = CHROMA_COLLECTION):
     client = build_chroma_client()
     existing = {c.name for c in client.list_collections()}
-    if CHROMA_COLLECTION in existing and client.get_collection(CHROMA_COLLECTION).count() > 0:
-        vectorstore = Chroma(client=client, collection_name=CHROMA_COLLECTION, embedding_function=embeddings)
+    if collection in existing and client.get_collection(collection).count() > 0:
+        vectorstore = Chroma(client=client, collection_name=collection, embedding_function=embeddings)
         sync_index(vectorstore)
         return vectorstore
 
-    if CHROMA_COLLECTION in existing:
-        client.delete_collection(CHROMA_COLLECTION)
+    if collection in existing:
+        client.delete_collection(collection)
 
     rows = catalog.list_documents()
     vectorstore = Chroma.from_documents(
-        load_split_docs(rows), embeddings, client=client, collection_name=CHROMA_COLLECTION,
+        load_split_docs(rows), embeddings, client=client, collection_name=collection,
     )
     for row in rows:
         catalog.mark_indexed(row["source_path"])

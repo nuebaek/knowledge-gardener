@@ -21,8 +21,6 @@ def tags() -> list[str]:
     return corpus_service.list_tags()
 
 
-# doc_id가 이제 "data/writer/dailynote/2026-07-19-lora.md" 같은 상대 경로라 슬래시를
-# 포함한다 — :path 컨버터가 있어야 라우팅이 중간에서 끊기지 않는다.
 @router.get("/documents/{doc_id:path}", response_model=DocumentDetail)
 def document(doc_id: str) -> DocumentDetail:
     return corpus_service.get_document(doc_id)

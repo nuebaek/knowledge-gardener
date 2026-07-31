@@ -7,7 +7,7 @@ from app.core import catalog
 from app.core.paths import PROCESSED_DIR, PROJECT_ROOT, WRITER_DIR
 from app.schemas.corpus import CorpusResponse, DocumentDetail, DocumentSummary, SearchHit, SearchResponse
 
-# 카탈로그에 없는 임의 경로(예: ../../.env)가 넘어와도 이 두 트리 밖은 절대 못 읽도록 고정.
+# path traversal 방지 — 이 두 트리 밖은 절대 못 읽음
 ALLOWED_ROOTS = [PROCESSED_DIR.resolve(), WRITER_DIR.resolve()]
 
 _MARKUP = re.compile(r"[*_`#]")
@@ -19,9 +19,6 @@ _HR = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
 
 
 def _strip_frontmatter(text: str) -> str:
-    """writer가 저장하는 문서는 전부 YAML frontmatter(`---`로 감싼 블록)로 시작한다 —
-    title/tags/doc_type은 이미 별도 필드로 카탈로그에 있으니 사용자 화면(본문/미리보기)엔
-    이 블록을 보여줄 이유가 없다. `---`로 시작하지 않는 문서(ingest 변환본 등)는 그대로 둔다."""
     if not text.startswith("---"):
         return text
     parts = text.split("---", 2)
@@ -29,7 +26,6 @@ def _strip_frontmatter(text: str) -> str:
 
 
 def _excerpt(text: str, limit: int = 140) -> str:
-    """헤더/TOC 라벨/링크/불릿 줄을 모두 건너뛰고 진짜 본문 문단만 뽑아 목록 카드에 쓴다."""
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
@@ -55,7 +51,7 @@ def _resolve(doc_id: str) -> Path:
 def _to_summary(row) -> DocumentSummary | None:
     path = PROJECT_ROOT / row["source_path"]
     if not path.exists():
-        return None  # 카탈로그엔 있는데 파일이 직접 지워진 경우 — 목록에서 조용히 빠짐
+        return None
     text = _strip_frontmatter(path.read_text(encoding="utf-8"))
     return DocumentSummary(
         id=row["source_path"],
@@ -111,7 +107,6 @@ def list_tags() -> list[str]:
 
 
 def search_documents(query: str, limit: int = 20) -> SearchResponse:
-    """문서 전문에서 문단 단위 키워드 검색. 가장 가까운 헤딩을 section으로 붙인다."""
     q = query.strip()
     if not q:
         return SearchResponse(query=query, hits=[])
@@ -123,7 +118,7 @@ def search_documents(query: str, limit: int = 20) -> SearchResponse:
             break
         path = PROJECT_ROOT / row["source_path"]
         if not path.exists():
-            continue  # 카탈로그엔 있는데 파일이 직접 지워진 경우
+            continue
         text = _strip_frontmatter(path.read_text(encoding="utf-8"))
         title = row["title"]
         current_section = title
@@ -163,6 +158,6 @@ def search_documents(query: str, limit: int = 20) -> SearchResponse:
                     match_end=match_end,
                 )
             )
-            break  # 문서당 첫 매치 하나만 — 안 그러면 문단마다 같은 문서가 중복으로 뜬다
+            break  # 문서당 첫 매치만 — 안 그러면 문단마다 같은 문서가 중복으로 뜸
 
     return SearchResponse(query=q, hits=hits)
