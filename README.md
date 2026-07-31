@@ -38,19 +38,21 @@ Knowledge Gardener:
 
 대부분의 AI 학습 도구는 사용자가 설명하기 전에 **답부터 알려준다.**
 
-하지만 교육학 연구(Dunlosky et al., 2013)는
+하지만 교육학 연구(Dunlosky et al., 2013)에 따르면,
 
 - **Retrieval Practice (인출 연습)**
 - **Spaced Repetition (분산 복습)**
 
-은 높은 학습 효과를 보이고,
+은 높은 학습 효과를 보이는 반면,
 
-- 요약
-- 재독
+- **Summarization (요약)**
+- **Rereading (재독)**
 
 은 상대적으로 효과가 낮다고 보고한다.
 
-그래서 Knowledge Gardener는
+그래서 Knowledge Gardener는 사용자의 빈칸을 대신 채우지 않는다.
+
+설명을 유도하고, 설명하지 못한 개념은 다음 학습을 위한 **🌱 seedling**으로 남긴다.
 
 > **"요약을 잘하는 AI"가 아니라 "설명하게 만드는 AI"**
 
@@ -60,10 +62,10 @@ Knowledge Gardener:
 
 | 원칙 | 시스템에서 어떻게 강제했는가 |
 |------|---------------------------|
-| 요약 생성 경로 제거 | `write_daily`는 질문만 생성하며, 답은 절대 생성하지 않는다. |
-| 추측 생성 금지 | 설명하지 못한 내용은 채우지 않고 `🌱 seedlings`에만 기록한다. |
-| 얕은 이해 차단 | 설명이 피상적이면 반드시 후속 질문을 생성한다. |
-| 임의 종료 방지 | 마지막 토픽에서도 저장하지 않고 반드시 사용자 확인을 거친다. |
+| 설명은 사용자가 한다 | `write_daily`는 질문만 생성하며, 답을 대신 작성하지 않는다. |
+| 모르면 채우지 않는다 | 설명하지 못한 개념은 보완하지 않고 `🌱 seedling`으로만 기록한다. |
+| 얕은 이해는 더 묻는다 | 설명이 피상적이면 반드시 후속 질문을 생성한다. |
+| 사용자 확인 후 저장한다 | 마지막 토픽에서도 바로 저장하지 않고 반드시 저장 여부를 확인한다. |
 
 ---
 
@@ -72,6 +74,7 @@ Knowledge Gardener:
 인출연습은 한 번의 질문으로 끝나지 않는다.
 
 사용자의 답변에 따라 추가 질문을 하거나, 다음 토픽으로 넘어가거나, 저장 여부를 확인해야 한다.
+
 Knowledge Gardener는 이 흐름을 **LangGraph 기반의 상태 전이(State Transition)** 로 관리한다.
 
 이 과정에서 학습 세션은 네 가지 상태를 오가며 진행된다.
@@ -120,7 +123,7 @@ flowchart TB
 
     subgraph derived["파생 계층 — 언제든 재생성 가능"]
         CAT[("SQLite 카탈로그<br/>content_hash, 태그")]
-        VEC[("Chroma<br/>bge-m3 임베딩")]
+        VEC[("Chroma<br/>e5-small-ko-v2 임베딩")]
     end
 
     subgraph app["FastAPI"]
@@ -149,16 +152,18 @@ flowchart TB
 
 | 영역 | 선택 | 채택 근거 |
 |---|---|---|
-| 에이전트 | LangGraph `StateGraph` + tool-calling + 체크포인터 | 조건 분기와 멀티턴 상태는 단일 체인(LCEL)으로 표현할 수 없다 |
+| 에이전트 | LangGraph `StateGraph` + tool-calling + 체크포인터 | 조건 분기와 멀티턴 상태 관리를 단일 체인(LCEL)으로 표현하기 어렵기 때문에 StateGraph를 사용했다. |
 | 전처리 | [markitdown](https://github.com/microsoft/markitdown) + Markdown Header Splitter | 형식을 통일하고, 헤더 단위로 쪼개 검색 시 섹션 의미를 보존한다 |
-| 인덱스 | SQLite 카탈로그(`content_hash`) + ChromaDB | 변경 감지와 태그는 SQL로, 유사도는 벡터로 — 둘 다 `.md`에서 재생성 가능한 파생 데이터다 |
-| 임베딩 | 로컬 `BAAI/bge-m3` | API 무료 한도를 넘어 로컬로 전환 |
-| LLM | 생성: Cerebras `gemma-4-31b` → (폴백) Claude `Haiku 4.5`<br>판정: Claude `Sonnet 5` | 판정 오류는 사용자 경험에 직접 영향을 주기 때문에, Generation보다 Judge에 더 높은 성능의 모델을 사용했다 |
-| 서빙 | FastAPI, `lifespan`에서 그래프 1회 구성 | 요청마다 그래프를 새로 만들지 않는다 |
+| 인덱스 | SQLite 카탈로그(`content_hash`) + ChromaDB | 변경 감지와 메타데이터 관리는 SQLite로, 유사도 검색은 Chroma로 담당한다. 두 저장소 모두 Markdown으로부터 재생성 가능한 파생 데이터다. |
+| 임베딩 | `dragonkue/multilingual-e5-small-ko-v2` | `bge-m3`(568M)가 EC2 t3.small(1.9GB RAM)에서 OOM → 더 작은(118M) 대신 한국어로 파인튜닝한 `multilingual-e5-small` 기반 모델을 채택, 자체 벤치마크로 검색 품질 유지 확인 |
+| LLM | 생성: Cerebras `gemma-4-31b` → (폴백) Claude `Haiku 4.5`<br>평가: Claude `Sonnet 5` | 평가 모델은 생성 모델보다 높은 성능의 모델을 사용해 생성 품질을 보다 안정적으로 평가하도록 했다. |
+| 서빙 | FastAPI, `lifespan`에서 그래프 1회 구성 | 그래프를 애플리케이션 시작 시 한 번만 구성해 요청마다 재초기화하지 않는다. |
 | 관측 | LangSmith 추적 + 요청별 `elapsed_ms` 로깅 | Trace 및 Latency 분석 |
 | 배포 | Docker + Compose + EC2 | 앱과 Chroma를 서비스로 분리, named volume, EC2용 compose 별도 |
 
 ---
+
+
 
 ## 실행
 
@@ -197,7 +202,9 @@ app/
 └── services/, schemas/, visualizer/
 scripts/
 ├── preprocess.py         # data/raw → markitdown → data/processed
-├── eval_retrieval.py     # 검색 평가 + threshold 스윕
+├── gen_evalset.py        # 공개 코퍼스에서 벤치마크 gold셋(jsonl) 생성
+├── benchmark.py          # retrieval/generation/threshold 벤치마크 러너
+├── eval_retrieval.py     # (레거시) 검색 평가 + threshold 스윕 — benchmark.py로 대체 중
 └── baseline.py           # LangSmith 엔드투엔드 평가
 static/                   # 웹 UI (대화 + 문서 리더)
 ```
