@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from app.core import catalog
 from app.core.paths import PROCESSED_DIR, PROJECT_ROOT, WRITER_DIR
+from app.rag.chain import answer_document_question
 from app.schemas.corpus import CorpusResponse, DocumentDetail, DocumentSummary, SearchHit, SearchResponse
 
 # path traversal 방지 — 이 두 트리 밖은 절대 못 읽음
@@ -161,3 +162,8 @@ def search_documents(query: str, limit: int = 20) -> SearchResponse:
             break  # 문서당 첫 매치만 — 안 그러면 문단마다 같은 문서가 중복으로 뜸
 
     return SearchResponse(query=q, hits=hits)
+
+
+def ask_about_document(doc_id: str, question: str, history: list[dict]) -> str:
+    doc = get_document(doc_id)
+    return answer_document_question(question, doc.content, history)

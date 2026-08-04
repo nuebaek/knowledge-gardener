@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -42,3 +44,17 @@ class SearchHit(BaseModel):
 class SearchResponse(BaseModel):
     query: str
     hits: list[SearchHit]
+
+
+class DocChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class DocChatRequest(BaseModel):
+    question: str
+    history: list[DocChatMessage] = []
+
+
+class DocChatResponse(BaseModel):
+    answer: str
