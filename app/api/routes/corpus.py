@@ -1,7 +1,10 @@
 from fastapi import APIRouter
 
 from app.services import corpus_service
-from app.schemas.corpus import CorpusResponse, DocumentDetail, DocumentSummary, SearchResponse, TagRequest
+from app.schemas.corpus import (
+    CorpusResponse, DocChatRequest, DocChatResponse, DocumentDetail, DocumentSummary, SearchResponse,
+    TagRequest,
+)
 
 router = APIRouter()
 
@@ -39,3 +42,10 @@ def remove_tag(doc_id: str, name: str) -> list[str]:
 @router.get("/search", response_model=SearchResponse)
 def search(q: str = "") -> SearchResponse:
     return corpus_service.search_documents(q)
+
+
+@router.post("/documents/{doc_id:path}/ask", response_model=DocChatResponse)
+def ask_about_document(doc_id: str, body: DocChatRequest) -> DocChatResponse:
+    history = [{"role": m.role, "content": m.content} for m in body.history]
+    answer = corpus_service.ask_about_document(doc_id, body.question, history)
+    return DocChatResponse(answer=answer)
