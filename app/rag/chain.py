@@ -255,6 +255,37 @@ PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
+DOC_QA_PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "You are a Q&A assistant answering questions about ONE specific document. "
+     "Answer using ONLY the document text below — do not rely on prior knowledge or infer beyond "
+     "what is explicitly written. Match your response language to the question (Korean → Korean, "
+     "English → English) in EVERY case, including when you cannot answer. If the document lacks "
+     "sufficient information, say so clearly in the question's own language — for example, "
+     "Korean: \"이 문서에 이 내용이 없습니다.\" / English: \"This document does not cover this.\" "
+     "Never default to English when the question was asked in another language.\n\n"
+     "DOCUMENT:\n{document}"),
+    ("human", "{conversation}Q: {question}"),
+])
+
+
+def _format_doc_chat_history(history: list[dict]) -> str:
+    if not history:
+        return ""
+    lines = [f"{'Q' if h['role'] == 'user' else 'A'}: {h['content']}" for h in history]
+    return "\n".join(lines) + "\n"
+
+
+def answer_document_question(question: str, document_text: str, history: list[dict]) -> str:
+    llm = apply_fallback(build_llm())
+    chain = DOC_QA_PROMPT | llm | StrOutputParser()
+    return chain.invoke({
+        "document": document_text,
+        "conversation": _format_doc_chat_history(history),
+        "question": question,
+    })
+
+
 REWRITE_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "You rewrite search queries for a document retrieval system. "
