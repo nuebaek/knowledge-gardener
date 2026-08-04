@@ -1,6 +1,7 @@
 services:
   chroma:
     image: chromadb/chroma:latest
+    restart: unless-stopped
     volumes:
       - chroma_server_data:/data
     ports:
@@ -8,6 +9,7 @@ services:
 
   app:
     image: nuebaek/knowledge-gardener:latest
+    restart: unless-stopped
     env_file:
       - .env
     environment:
