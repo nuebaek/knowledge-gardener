@@ -32,5 +32,8 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ~/knowledge-gardener
+            git fetch origin
+            git checkout main
+            git reset --hard origin/main
             sudo docker compose -f docker-compose.ec2.yml pull
             sudo docker compose -f docker-compose.ec2.yml up -d
