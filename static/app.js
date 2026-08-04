@@ -194,7 +194,7 @@ function activatePanel(name) {
     el.hidden = key !== name;
   });
   if (name === "documents") ensureDocumentsLoaded().catch(() => {});
-  history.replaceState(null, "", name === "documents" ? "#" : `#${name}`);
+  history.replaceState(null, "", name === "chat" ? "#" : "#docs");
 }
 
 railTabs.forEach((tab, i) => {
@@ -941,9 +941,9 @@ submitBtn.disabled = true;
 loadCorpus();
 
 const [initialPanel, initialDocId] = location.hash.replace("#", "").split("/");
-if (initialPanel === "chat") {
-  activatePanel("chat");
-} else {
-  ensureDocumentsLoaded().catch(() => {});
+if (initialPanel === "docs" || initialPanel === "documents") {
+  activatePanel("documents");
   if (initialDocId) ensureDocumentsLoaded().then(() => openDocument(initialDocId));
+} else {
+  activatePanel("chat");
 }

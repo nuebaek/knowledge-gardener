@@ -33,7 +33,7 @@
 
       <div class="rail-tabs" role="tablist" aria-label="패널" aria-orientation="vertical">
         <span class="rail-indicator" id="rail-indicator" aria-hidden="true"></span>
-        <button type="button" class="rail-tab" id="tab-chat" role="tab" aria-selected="false" tabindex="-1"
+        <button type="button" class="rail-tab" id="tab-chat" role="tab" aria-selected="true" tabindex="0"
           aria-controls="panel-chat" data-panel="chat">
           <svg class="rail-tab-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
             <path d="M3.5 5.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H8l-3 3v-3h-.5a2 2 0 0 1-2-2v-6Z"
@@ -41,7 +41,7 @@
           </svg>
           <span class="rail-tab-label">채팅</span>
         </button>
-        <button type="button" class="rail-tab" id="tab-documents" role="tab" aria-selected="true" tabindex="0"
+        <button type="button" class="rail-tab" id="tab-documents" role="tab" aria-selected="false" tabindex="-1"
           aria-controls="panel-documents" data-panel="documents">
           <svg class="rail-tab-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
             <path d="M6 2.5h5.5L15 6v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1Z"
@@ -60,7 +60,7 @@
 
     <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
 
-    <section class="panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" tabindex="0" hidden>
+    <section class="panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" tabindex="0">
       <header class="panel-head">
         <div class="panel-head-main">
           <h1 class="panel-title"><span class="title-dot" aria-hidden="true"></span>Knowledge Gardener</h1>
@@ -98,7 +98,7 @@
       </form>
     </section>
 
-    <section class="panel" id="panel-documents" role="tabpanel" aria-labelledby="tab-documents" tabindex="0">
+    <section class="panel" id="panel-documents" role="tabpanel" aria-labelledby="tab-documents" tabindex="0" hidden>
       <header class="panel-head">
         <div class="panel-head-main">
           <h1 class="panel-title">문서함</h1>
