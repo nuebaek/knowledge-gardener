@@ -11,6 +11,7 @@ const corpusTag = document.getElementById("corpus-tag");
 marked.setOptions({ breaks: true, gfm: true });
 
 const THREAD_KEY = "kaia:thread_id";
+let docChatHistory = [];
 
 function randomId() {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -177,6 +178,7 @@ async function loadCorpus() {
 }
 
 const railTabs = Array.from(document.querySelectorAll(".rail-tab"));
+const tabDocuments = document.getElementById("tab-documents");
 const railIndicator = document.getElementById("rail-indicator");
 const panels = {
   chat: document.getElementById("panel-chat"),
@@ -306,6 +308,83 @@ const docFolderTabs = document.getElementById("doc-folder-tabs");
 const tagFilterPill = document.getElementById("tag-filter-pill");
 const tagFilterLabel = document.getElementById("tag-filter-label");
 
+const docFlyout = document.getElementById("doc-flyout");
+const docChatPanel = document.getElementById("doc-chat-panel");
+const docChatPanelClose = document.getElementById("doc-chat-panel-close");
+const docChatThread = document.getElementById("doc-chat-thread");
+const docChatForm = document.getElementById("doc-chat-form");
+const docChatInput = document.getElementById("doc-chat-input");
+let currentDocId = null;
+
+function appendDocChatBubble(role, text) {
+  const bubble = document.createElement("div");
+  bubble.className = `doc-chat-bubble doc-chat-bubble-${role}`;
+  if (role === "assistant") {
+    renderMarkdownInto(bubble, text);
+  } else {
+    bubble.textContent = text;
+  }
+  docChatThread.appendChild(bubble);
+  docChatThread.scrollTop = docChatThread.scrollHeight;
+}
+
+let docFlyoutPinned = false;
+let docFlyoutPeeking = false;
+
+function syncDocFlyout() {
+  docFlyout.classList.toggle("is-open", docFlyoutPinned || docFlyoutPeeking);
+  tabDocuments.classList.toggle("is-pinned", docFlyoutPinned);
+}
+
+function closeDocFlyout() {
+  docFlyoutPinned = false;
+  docFlyoutPeeking = false;
+  syncDocFlyout();
+}
+
+function peekDocFlyout(open) {
+  docFlyoutPeeking = open;
+  syncDocFlyout();
+}
+
+tabDocuments.addEventListener("mouseenter", () => peekDocFlyout(true));
+tabDocuments.addEventListener("mouseleave", () => peekDocFlyout(false));
+docFlyout.addEventListener("mouseenter", () => peekDocFlyout(true));
+docFlyout.addEventListener("mouseleave", () => peekDocFlyout(false));
+
+tabDocuments.addEventListener("click", () => {
+  docFlyoutPinned = !docFlyoutPinned;
+  syncDocFlyout();
+});
+
+docChatPanelClose.addEventListener("click", () => {
+  docChatPanel.classList.remove("is-open");
+});
+
+docChatForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const question = docChatInput.value.trim();
+  if (!question || !currentDocId) return;
+  docChatInput.value = "";
+  appendDocChatBubble("user", question);
+  const historyForRequest = docChatHistory;
+  docChatHistory = [...docChatHistory, { role: "user", content: question }];
+
+  try {
+    const res = await fetch(`/documents/${encodeURIComponent(currentDocId)}/ask`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, history: historyForRequest }),
+    });
+    if (!res.ok) throw new Error("failed to get answer");
+    const data = await res.json();
+    appendDocChatBubble("assistant", data.answer);
+    docChatHistory = [...docChatHistory, { role: "assistant", content: data.answer }];
+  } catch (err) {
+    appendDocChatBubble("error", "답변을 가져오지 못했어요. 다시 시도해주세요.");
+  }
+});
+
 // doc_type comes straight from the storage path — "processed" isn't always CS231n
 // (any file through scripts/preprocess.py lands there), so don't hardcode a label.
 const DOC_TYPE_LABELS = { dailynote: "데일리노트", weeklynote: "위클리노트", til: "TIL", processed: "코퍼스" };
@@ -431,9 +510,11 @@ function renderDocList(docs) {
     card.setAttribute("aria-current", "false");
     card.style.setProperty("--i", Math.min(i, 10));
     card.innerHTML = `
-      <p class="doc-card-title"></p>
+      <div class="doc-card-row">
+        <p class="doc-card-title"></p>
+        <p class="doc-card-meta"></p>
+      </div>
       <p class="doc-card-excerpt"></p>
-      <p class="doc-card-meta"></p>
       <div class="doc-card-tags"></div>
     `;
     card.querySelector(".doc-card-title").textContent = doc.title;
@@ -446,7 +527,7 @@ function renderDocList(docs) {
       chip.textContent = tag;
       tagsEl.appendChild(chip);
     });
-    card.addEventListener("click", () => openDocument(doc.id));
+    card.addEventListener("click", () => goToDocument(doc.id));
     docListEl.appendChild(card);
   });
 }
@@ -511,6 +592,7 @@ function docReaderSkeleton() {
 
 async function openDocument(docId, scrollQuery) {
   markActiveDocCard(docId);
+  closeDocFlyout();
   docReaderEmpty.hidden = true;
   docReaderBody.hidden = false;
   docReaderBody.innerHTML = docReaderSkeleton();
@@ -522,8 +604,11 @@ async function openDocument(docId, scrollQuery) {
 
     docReaderBody.innerHTML = `
       <header class="doc-reader-head">
-        <p class="doc-reader-eyebrow"></p>
-        <h2 class="doc-reader-title"></h2>
+        <div class="doc-reader-head-main">
+          <p class="doc-reader-eyebrow"></p>
+          <h2 class="doc-reader-title"></h2>
+        </div>
+        <button type="button" class="doc-chat-open-trigger" id="doc-chat-open-trigger">💬 질문</button>
       </header>
       <div class="doc-reader-tags">
         <div class="tag-chip-list" id="reader-tag-list"></div>
@@ -541,6 +626,14 @@ async function openDocument(docId, scrollQuery) {
     renderMarkdownInto(contentEl, doc.content);
     wireTocLinks(contentEl);
     renderReaderTags(doc.id, doc.tags);
+
+    currentDocId = doc.id;
+    docChatHistory = [];
+    docChatThread.innerHTML = "";
+    docReaderBody.querySelector("#doc-chat-open-trigger").addEventListener("click", () => {
+      docChatPanel.classList.add("is-open");
+      docChatInput.focus();
+    });
     // force a reflow so removing+re-adding the class restarts the animation
     docReaderBody.classList.remove("is-entering");
     void docReaderBody.offsetWidth;
@@ -943,7 +1036,12 @@ loadCorpus();
 const [initialPanel, initialDocId] = location.hash.replace("#", "").split("/");
 if (initialPanel === "docs" || initialPanel === "documents") {
   activatePanel("documents");
-  if (initialDocId) ensureDocumentsLoaded().then(() => openDocument(initialDocId));
+  if (initialDocId) {
+    ensureDocumentsLoaded().then(() => openDocument(initialDocId));
+  } else {
+    docFlyoutPinned = true;
+    syncDocFlyout();
+  }
 } else {
   activatePanel("chat");
 }

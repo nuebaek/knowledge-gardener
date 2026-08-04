@@ -8,13 +8,9 @@
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌱</text></svg>" />
   <meta name="description" content="질문에는 근거를, 학습 기록에는 저장할 자리를 주는 개인 학습 에이전트" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" as="style" crossorigin
     href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap"
-    rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mind-elixir/dist/MindElixir.css" />
   <link rel="stylesheet" href="/style.css" />
@@ -57,6 +53,25 @@
         <span class="corpus-tag" id="corpus-tag" hidden></span>
       </div>
     </nav>
+
+    <aside class="doc-flyout" id="doc-flyout" aria-label="문서 목록">
+      <div class="doc-flyout-inner">
+        <div class="doc-search-bar" id="doc-search-bar">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <label class="sr-only" for="doc-search-input">문서 검색</label>
+          <input id="doc-search-input" type="text" placeholder="키워드로 문서 검색" autocomplete="off" />
+        </div>
+
+        <div class="doc-filter-row">
+          <div class="doc-folder-tabs" id="doc-folder-tabs" role="tablist" aria-label="문서 폴더"></div>
+          <button type="button" class="tag-filter-pill" id="tag-filter-pill" hidden>
+            <span id="tag-filter-label"></span><span class="tag-filter-clear" aria-hidden="true">×</span>
+          </button>
+        </div>
+
+        <div class="doc-list" id="doc-list" aria-label="문서 목록"></div>
+      </div>
+    </aside>
 
     <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
 
@@ -107,21 +122,7 @@
         <div class="panel-head-meta" id="doc-count-tag"></div>
       </header>
 
-      <div class="doc-search-bar" id="doc-search-bar">
-        <span class="search-icon" aria-hidden="true">⌕</span>
-        <label class="sr-only" for="doc-search-input">문서 검색</label>
-        <input id="doc-search-input" type="text" placeholder="키워드로 문서 검색" autocomplete="off" />
-      </div>
-
-      <div class="doc-filter-row">
-        <div class="doc-folder-tabs" id="doc-folder-tabs" role="tablist" aria-label="문서 폴더"></div>
-        <button type="button" class="tag-filter-pill" id="tag-filter-pill" hidden>
-          <span id="tag-filter-label"></span><span class="tag-filter-clear" aria-hidden="true">×</span>
-        </button>
-      </div>
-
       <div class="doc-layout">
-        <div class="doc-list" id="doc-list" aria-label="문서 목록"></div>
         <div class="doc-reader" id="doc-reader">
           <div class="doc-reader-empty" id="doc-reader-empty">
             <svg class="empty-sprout" viewBox="0 0 48 64" width="28" height="37" aria-hidden="true">
@@ -134,6 +135,20 @@
           </div>
           <article class="doc-reader-body" id="doc-reader-body" hidden></article>
         </div>
+        <aside class="doc-chat-panel" id="doc-chat-panel" aria-label="문서 질문 패널">
+          <div class="doc-chat-panel-inner">
+            <div class="doc-chat-panel-head">
+              <span class="doc-chat-panel-title"><span aria-hidden="true">💬</span> 이 문서에 대해 질문하기</span>
+              <button type="button" class="doc-chat-panel-close" id="doc-chat-panel-close" aria-label="질문 패널 닫기">×</button>
+            </div>
+            <div class="doc-chat-thread" id="doc-chat-thread"></div>
+            <form class="doc-chat-form" id="doc-chat-form">
+              <input type="text" id="doc-chat-input" class="doc-chat-input"
+                placeholder="이 문서에 대해 질문하기..." autocomplete="off" />
+              <button type="submit" class="doc-chat-submit" aria-label="질문 보내기">↑</button>
+            </form>
+          </div>
+        </aside>
       </div>
     </section>
   </div>
