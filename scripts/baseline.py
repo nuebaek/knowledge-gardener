@@ -12,12 +12,13 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langsmith import Client
 from langsmith.evaluation import evaluate
 
-from app.rag.chain import TOP_K, build_rag_chain
+from app.rag.chain import TOP_K
+from app.rag.graph import build_rag_graph
 
-# 서빙과 동일한 체인 (인덱싱은 build_rag_chain 내부에서 1회 수행)
-rag = build_rag_chain()
+# 서빙과 동일한 그래프 (인덱싱은 build_rag_graph 내부에서 1회 수행)
+rag = build_rag_graph()
 
-_demo = rag.invoke("What is the main challenge of image classification?")
+_demo = rag.invoke({"question": "What is the main challenge of image classification?"})
 print(_demo["answer"])
 print("출처:", _demo["sources"])
 
@@ -101,7 +102,7 @@ else:
 
 
 def target(inputs):
-    result = rag.invoke(inputs["question"])
+    result = rag.invoke({"question": inputs["question"]})
     return {"answer": result["answer"], "sources": result["sources"]}
 
 
@@ -203,7 +204,7 @@ def answer_relevancy(run, example):
     return {"key": "answer_relevancy", "score": score, "comment": reply}
 
 
-# 실험 라벨: 임베딩(bge-m3)은 고정이라 변별력이 없으므로 '생성 LLM'으로 구분한다.
+# 실험 라벨: 임베딩 모델은 고정이라 변별력이 없으므로 '생성 LLM'으로 구분한다.
 _provider = os.getenv("LLM_PROVIDER", "google").lower()
 _llm_name = (os.getenv("OLLAMA_MODEL", "gemma4:e2b") if _provider == "ollama"
              else os.getenv("GOOGLE_MODEL", "gemini-2.5-flash"))
