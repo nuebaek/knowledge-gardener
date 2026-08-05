@@ -163,6 +163,37 @@ body {
   stroke-linecap: round;
 }
 
+.rail-mark-trunk {
+  fill: none;
+  stroke: var(--moss);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.rail-mark-stem-thick {
+  stroke-width: 4;
+}
+
+.rail-mark-canopy {
+  fill: var(--moss);
+}
+
+.rail-mark-sprout.is-growing {
+  animation: plant-grow 0.5s var(--ease-spring) both;
+}
+
+@keyframes plant-grow {
+  0% { transform: scale(0.75); opacity: 0.6; }
+  60% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-mark-sprout.is-growing {
+    animation: none;
+  }
+}
+
 .rail-tabs {
   position: relative;
   display: flex;
@@ -300,6 +331,106 @@ body {
   gap: 1rem;
 }
 
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.panel-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chat-aside {
+  flex: none;
+  width: 23rem;
+  padding: 1.5rem 1.25rem;
+  overflow-y: auto;
+  border-left: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.chat-aside-title {
+  margin: 0 0 0.75rem;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  color: var(--ink);
+}
+
+.chat-aside-today {
+  margin: -0.4rem 0 0.75rem;
+  font-size: 0.75rem;
+  color: var(--ink-mute);
+}
+
+.chat-aside-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.chat-aside-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.chat-aside-guide p {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+.chat-aside-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.7rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease-out), background 0.15s var(--ease-out);
+}
+
+.chat-aside-item:hover {
+  border-color: var(--moss);
+  background: var(--bg-inset);
+}
+
+.chat-aside-item-title {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--ink-dim);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-aside-item-meta {
+  display: block;
+  margin-top: 0.15rem;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 64rem) {
+  .chat-aside {
+    display: none;
+  }
+}
+
 .panel-head-main {
   min-width: 0;
 }
@@ -392,6 +523,7 @@ body {
 }
 
 .transcript-inner {
+  min-height: 100%;
   max-width: 56rem;
   margin: 0 auto;
   display: flex;
@@ -514,10 +646,14 @@ body {
 }
 
 .examples {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.5rem;
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0 clamp(1.25rem, 4vw, 2.5rem) 0.75rem;
 }
 
 .chip-example {
@@ -1439,6 +1575,17 @@ body {
   color: var(--ink-mute);
 }
 
+.doc-card-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+.doc-card-meta-chips:empty {
+  display: none;
+}
+
 .doc-card-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1538,8 +1685,115 @@ body {
 }
 
 .doc-reader-body {
-  max-width: 42rem;
+  max-width: 80rem;
   margin: 0 auto;
+}
+
+.doc-reader-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24rem;
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.doc-reader-main {
+  min-width: 0;
+}
+
+.doc-reader-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: sticky;
+  top: 0;
+  /* 문서 정보 카드 위 여백(패널 헤더+상단 패딩)만큼을 빼고, 나머지는 채팅 박스가 화면
+     하단까지 채우도록 — 고정 길이 대신 뷰포트 기준으로 늘어난다 */
+  height: calc(100vh - 9.5rem);
+}
+
+.reader-info-card,
+.chat-aside-section {
+  padding: 0.9rem 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+}
+
+.reader-info-title {
+  margin: 0 0 0.6rem;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  color: var(--ink);
+}
+
+.reader-info-list {
+  margin: 0 0 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.reader-info-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.reader-info-row dt {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--ink-mute);
+}
+
+.reader-info-row dd {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ink-dim);
+  text-align: right;
+}
+
+.reader-info-card .doc-reader-tags {
+  margin: 0 0 0.5rem;
+}
+
+.reader-info-card .note-meta {
+  margin: 0;
+  padding: 0.6rem 0 0;
+  background: none;
+  border-top: 1px solid var(--rule);
+  border-radius: 0;
+}
+
+.reader-toc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.reader-toc-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 0.3rem 0 0.3rem calc(var(--depth, 0) * 0.75rem);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--ink-mute);
+  cursor: pointer;
+  border-radius: var(--radius-control);
+  transition: color 0.15s var(--ease-out), background 0.15s var(--ease-out);
+}
+
+.reader-toc-item:hover {
+  color: var(--moss);
+  background: var(--bg-inset);
 }
 
 .doc-reader-body.is-entering {
@@ -1644,6 +1898,57 @@ body {
   font-size: 1rem;
   line-height: 1.75;
   max-width: 68ch;
+}
+
+.note-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--bg-inset);
+  border-radius: var(--radius-control);
+}
+
+.note-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.note-meta-label {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--ink-mute);
+  margin-right: 0.2rem;
+}
+
+.note-meta-chip {
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  color: var(--ink-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+.note-meta-action {
+  align-items: flex-start;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--rule);
+}
+
+.note-meta-action .note-meta-label::before {
+  content: "🌱 ";
+}
+
+.note-meta-action-text {
+  font-size: 0.8125rem;
+  color: var(--ink-dim);
+  white-space: pre-wrap;
 }
 
 .doc-reader-content .toc-link {
@@ -1926,12 +2231,19 @@ body {
     flex-direction: column;
   }
 
-  .doc-chat-panel.is-open {
-    width: 100%;
+  .doc-reader-layout {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
   }
 
-  .doc-chat-panel-inner {
-    width: 100%;
+  .doc-reader-aside {
+    position: static;
+    height: auto;
+  }
+
+  .reader-panel-body {
+    flex: none;
+    height: 24rem;
   }
 
   .doc-flyout.is-open {
@@ -1960,67 +2272,89 @@ body {
   padding: 0.4rem 0.75rem;
 }
 
-.doc-chat-panel {
-  flex: none;
-  width: 0;
+.reader-panel-card {
+  padding: 0;
   overflow: hidden;
-  background: var(--bg);
-  transition: width 0.28s var(--ease-out);
-}
-
-.doc-chat-panel.is-open {
-  width: 20rem;
-  border-left: 1px solid var(--rule);
-}
-
-.doc-chat-panel-inner {
-  width: 20rem;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 1rem;
 }
 
-.doc-chat-panel-head {
+.reader-panel-tabs {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding-bottom: 0.75rem;
-  margin-bottom: 0.75rem;
-  border-bottom: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule);
 }
 
-.doc-chat-panel-title {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-family: var(--display);
-  font-size: 0.875rem;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.doc-chat-panel-close {
-  flex: none;
-  width: 2rem;
-  height: 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.reader-panel-tab {
+  flex: 1;
+  padding: 0.65rem 0.5rem;
   border: none;
-  border-radius: 50%;
+  border-bottom: 2px solid transparent;
   background: none;
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  font-weight: 600;
   color: var(--ink-mute);
   cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
+  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out);
+}
+
+.reader-panel-tab:hover {
+  color: var(--ink-dim);
+}
+
+.reader-panel-tab[aria-selected="true"] {
+  color: var(--moss);
+  border-bottom-color: var(--moss);
+}
+
+.reader-panel-body {
+  flex: 1;
+  min-height: 12rem;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.reader-chat-mount {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.reader-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.doc-chat-reset {
+  align-self: flex-end;
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--ink-mute);
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+  border-radius: var(--radius-card);
   transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
 }
 
-.doc-chat-panel-close:hover {
+.doc-chat-reset:hover {
   background: var(--bg-inset);
   color: var(--ink);
+}
+
+.doc-chat-hint {
+  flex: none;
+  margin: 0 0 0.6rem;
+  font-size: 0.75rem;
+  color: var(--ink-mute);
 }
 
 .doc-chat-thread {
@@ -2050,6 +2384,35 @@ body {
 
 .doc-chat-bubble p {
   margin: 0 0 0.5em;
+}
+
+.doc-chat-bubble h1,
+.doc-chat-bubble h2,
+.doc-chat-bubble h3,
+.doc-chat-bubble h4,
+.doc-chat-bubble h5,
+.doc-chat-bubble h6 {
+  font-family: var(--display);
+  font-weight: 700;
+  color: inherit;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  margin: 0.8em 0 0.3em;
+}
+
+.doc-chat-bubble h1 {
+  font-size: 1rem;
+}
+
+.doc-chat-bubble h2 {
+  font-size: 0.9375rem;
+}
+
+.doc-chat-bubble h3,
+.doc-chat-bubble h4,
+.doc-chat-bubble h5,
+.doc-chat-bubble h6 {
+  font-size: 0.875rem;
 }
 
 .doc-chat-bubble-user {
@@ -2103,6 +2466,16 @@ body {
 
 .doc-chat-input::placeholder {
   color: var(--ink-mute);
+}
+
+.doc-chat-input:disabled,
+.doc-chat-reset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.doc-chat-bubble-pending {
+  padding: 0.65rem 0.9rem;
 }
 
 .doc-chat-submit {

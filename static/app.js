@@ -2,6 +2,7 @@ const transcript = document.getElementById("transcript");
 const transcriptInner = document.getElementById("transcript-inner");
 const emptyState = document.getElementById("empty-state");
 const examples = document.getElementById("examples");
+const chatAsideGuideSection = document.getElementById("chat-aside-guide-section");
 const composer = document.getElementById("composer");
 const input = document.getElementById("message");
 const submitBtn = document.getElementById("submit-btn");
@@ -47,6 +48,21 @@ function formatDocDate(isoString) {
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
+}
+
+function formatRelativeTime(isoString) {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return "";
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "방금";
+  if (diffMin < 60) return `${diffMin}분 전`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}시간 전`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay === 1) return "어제";
+  if (diffDay < 7) return `${diffDay}일 전`;
+  return formatDocDate(isoString);
 }
 
 function markRecallBlocks(container) {
@@ -143,6 +159,53 @@ function wireTocLinks(container) {
   });
 }
 
+// sidebar quick-nav, independent of writer's own inline "목차" section (if any) —
+// works for any document with headings, not just writer notes with that convention.
+// returns whether there was enough structure to show a 목차 tab at all.
+function renderReaderToc(nav, contentEl) {
+  const headings = Array.from(contentEl.querySelectorAll("h1, h2, h3, h4, h5, h6"))
+    .filter((h) => h.id); // wireTocLinks already stamped ids on every real heading
+
+  nav.innerHTML = "";
+  if (headings.length < 2) return false;
+
+  const baseLevel = Math.min(...headings.map((h) => Number(h.tagName[1])));
+  headings.forEach((h) => {
+    const depth = Number(h.tagName[1]) - baseLevel;
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "reader-toc-item";
+    item.style.setProperty("--depth", Math.min(depth, 3));
+    item.textContent = h.textContent.trim();
+    item.addEventListener("click", () => h.scrollIntoView({ behavior: "smooth", block: "start" }));
+    nav.appendChild(item);
+  });
+  return true;
+}
+
+// 목차가 길어도 채팅이 밀려 내려가지 않도록, 목차/채팅을 같은 자리에서 전환하는 탭으로 묶는다.
+function wireReaderPanelTabs(root, hasToc) {
+  const tocTabBtn = root.querySelector("#reader-tab-toc");
+  const chatTabBtn = root.querySelector("#reader-tab-chat");
+  const tocPane = root.querySelector("#reader-toc");
+  const chatPane = root.querySelector("#reader-chat-mount");
+
+  function activate(tab) {
+    const showToc = tab === "toc";
+    tocTabBtn.setAttribute("aria-selected", String(showToc));
+    chatTabBtn.setAttribute("aria-selected", String(!showToc));
+    tocPane.hidden = !showToc;
+    chatPane.hidden = showToc;
+  }
+
+  tocTabBtn.hidden = !hasToc;
+  tocTabBtn.addEventListener("click", () => activate("toc"));
+  chatTabBtn.addEventListener("click", () => activate("chat"));
+  activate(hasToc ? "toc" : "chat");
+
+  return activate;
+}
+
 function pickSample(list, n) {
   if (list.length <= n) return list;
   const step = list.length / n;
@@ -174,6 +237,60 @@ async function loadCorpus() {
     if (topics.length > 0) examples.hidden = false;
   } catch (err) {
     // corpus info is supplementary — a failed fetch shouldn't break the chat
+  }
+}
+
+// 브랜드 마크가 실제 완료한 인출 세션 수(=저장된 데일리노트 개수)를 반영해 자란다 —
+// 지어낸 스트릭/포인트가 아니라 이미 저장된 문서 수를 그대로 세는 것뿐.
+const railMark = document.getElementById("rail-mark");
+const railMarkSvg = document.getElementById("rail-mark-svg");
+
+const PLANT_STAGES = [
+  { name: "씨앗", min: 0, svg: `
+    <circle class="rail-mark-leaf" cx="24" cy="54" r="4" />
+    <path class="rail-mark-stem" d="M14 60 Q24 56 34 60" />
+  ` },
+  { name: "새싹", min: 1, svg: `
+    <path class="rail-mark-leaf" d="M24 36 C 12 36, 6 26, 8 13 C 19 15, 25 24, 24 36 Z" />
+    <path class="rail-mark-leaf" d="M24 28 C 36 28, 42 19, 40 8 C 30 10, 24 17, 24 28 Z" />
+    <path class="rail-mark-stem" d="M24 58 L24 21" />
+  ` },
+  { name: "묘목", min: 3, svg: `
+    <g transform="translate(24,58) scale(1.1) translate(-24,-58)">
+      <path class="rail-mark-leaf" d="M24 36 C 12 36, 6 26, 8 13 C 19 15, 25 24, 24 36 Z" />
+      <path class="rail-mark-leaf" d="M24 28 C 36 28, 42 19, 40 8 C 30 10, 24 17, 24 28 Z" />
+    </g>
+    <path class="rail-mark-stem rail-mark-stem-thick" d="M24 58 L24 19" />
+  ` },
+  { name: "나무", min: 7, svg: `
+    <path class="rail-mark-canopy" d="M24 34 C 8 34, 4 18, 14 8 C 20 2, 30 2, 36 9 C 44 18, 40 34, 24 34 Z" />
+    <path class="rail-mark-trunk" d="M24 58 L24 34" />
+  ` },
+];
+
+function plantStageForCount(count) {
+  let stage = PLANT_STAGES[0];
+  for (const s of PLANT_STAGES) {
+    if (count >= s.min) stage = s;
+  }
+  return stage;
+}
+
+let currentPlantStage = null;
+let dailyNoteCount = 0;
+
+function setPlantStage(count, { animate = false } = {}) {
+  const stage = plantStageForCount(count);
+  if (stage === currentPlantStage) return;
+  currentPlantStage = stage;
+
+  railMarkSvg.innerHTML = stage.svg;
+  railMark.title = `${stage.name} · 완료한 인출 세션 ${count}회`;
+
+  if (animate) {
+    railMarkSvg.classList.remove("is-growing");
+    void railMarkSvg.offsetWidth; // restart the animation even if the class never left
+    railMarkSvg.classList.add("is-growing");
   }
 }
 
@@ -309,12 +426,24 @@ const tagFilterPill = document.getElementById("tag-filter-pill");
 const tagFilterLabel = document.getElementById("tag-filter-label");
 
 const docFlyout = document.getElementById("doc-flyout");
-const docChatPanel = document.getElementById("doc-chat-panel");
-const docChatPanelClose = document.getElementById("doc-chat-panel-close");
+// 문서 전환마다 doc-reader-body가 통째로 다시 그려지므로, 이 채팅 DOM은 index.html에 한 번만
+// 존재하고 openDocument()가 매번 목차/채팅 탭 슬롯으로 옮겨 붙인다 — 그래서 아래 리스너들은
+// 문서를 몇 번을 열어도 다시 바인딩할 필요가 없다.
+const readerChat = document.getElementById("reader-chat");
+const docChatReset = document.getElementById("doc-chat-reset");
 const docChatThread = document.getElementById("doc-chat-thread");
 const docChatForm = document.getElementById("doc-chat-form");
 const docChatInput = document.getElementById("doc-chat-input");
 let currentDocId = null;
+
+function appendDocChatPending() {
+  const bubble = document.createElement("div");
+  bubble.className = "doc-chat-bubble doc-chat-bubble-assistant doc-chat-bubble-pending";
+  bubble.innerHTML = `<span class="typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>`;
+  docChatThread.appendChild(bubble);
+  docChatThread.scrollTop = docChatThread.scrollHeight;
+  return bubble;
+}
 
 function appendDocChatBubble(role, text) {
   const bubble = document.createElement("div");
@@ -357,37 +486,166 @@ tabDocuments.addEventListener("click", () => {
   syncDocFlyout();
 });
 
-docChatPanelClose.addEventListener("click", () => {
-  docChatPanel.classList.remove("is-open");
+// same document, fresh context — history/thread only, no navigation
+docChatReset.addEventListener("click", () => {
+  docChatHistory = [];
+  docChatThread.innerHTML = "";
+  docChatInput.focus();
 });
+
+let docChatPending = false;
 
 docChatForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (docChatPending) return;
   const question = docChatInput.value.trim();
   if (!question || !currentDocId) return;
+  docChatPending = true;
   docChatInput.value = "";
+  docChatInput.disabled = true;
+  docChatReset.disabled = true;
   appendDocChatBubble("user", question);
   const historyForRequest = docChatHistory;
   docChatHistory = [...docChatHistory, { role: "user", content: question }];
 
+  const pending = appendDocChatPending();
   try {
     const res = await fetch(`/documents/${encodeURIComponent(currentDocId)}/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, history: historyForRequest }),
     });
+    pending.remove();
     if (!res.ok) throw new Error("failed to get answer");
     const data = await res.json();
     appendDocChatBubble("assistant", data.answer);
     docChatHistory = [...docChatHistory, { role: "assistant", content: data.answer }];
   } catch (err) {
+    pending.remove();
     appendDocChatBubble("error", "답변을 가져오지 못했어요. 다시 시도해주세요.");
+  } finally {
+    docChatPending = false;
+    docChatInput.disabled = false;
+    docChatReset.disabled = false;
+    docChatInput.focus();
   }
 });
 
 // doc_type comes straight from the storage path — "processed" isn't always CS231n
 // (any file through scripts/preprocess.py lands there), so don't hardcode a label.
 const DOC_TYPE_LABELS = { dailynote: "데일리노트", weeklynote: "위클리노트", til: "TIL", processed: "코퍼스" };
+
+// writer.py's frontmatter fields, by note type — real data written at save time,
+// not something guessed by scanning the rendered markdown body.
+const NOTE_META_CHIP_FIELDS = { related_concepts: "연결 개념", topics: "이번 주 주제", keywords: "키워드" };
+
+// first non-empty chip field on the card, capped so a 16-concept weeklynote
+// doesn't blow up card height
+function cardPreviewChips(frontmatter, max = 3) {
+  if (!frontmatter) return [];
+  for (const field of Object.keys(NOTE_META_CHIP_FIELDS)) {
+    const values = frontmatter[field];
+    if (Array.isArray(values) && values.length > 0) return values.slice(0, max);
+  }
+  return [];
+}
+
+const chatAsideRecentSection = document.getElementById("chat-aside-recent-section");
+const chatAsideToday = document.getElementById("chat-aside-today");
+const chatAsideList = document.getElementById("chat-aside-list");
+const chatAsideSeedlingSection = document.getElementById("chat-aside-seedling-section");
+const chatAsideSeedlingList = document.getElementById("chat-aside-seedling-list");
+
+function makeChatAsideItem(title, meta, onClick) {
+  const item = document.createElement("button");
+  item.type = "button";
+  item.className = "chat-aside-item";
+  item.innerHTML = `
+    <span class="chat-aside-item-title"></span>
+    <span class="chat-aside-item-meta"></span>
+  `;
+  item.querySelector(".chat-aside-item-title").textContent = title;
+  item.querySelector(".chat-aside-item-meta").textContent = meta;
+  item.addEventListener("click", onClick);
+  return item;
+}
+
+// writer.py가 세션 저장 시점에 dailynote frontmatter에 적어 둔 seedlings만 쓴다 — 노트
+// 본문을 다시 스캔해서 추정하지 않는다. 이 필드가 생기기 전에 저장된 노트에는 없다.
+function renderSeedlingSidebar(docs) {
+  const entries = [];
+  docs.forEach((doc) => {
+    const seedlings = doc.frontmatter && Array.isArray(doc.frontmatter.seedlings) ? doc.frontmatter.seedlings : [];
+    seedlings.forEach((topic) => entries.push({ topic, doc }));
+  });
+  entries.sort((a, b) => new Date(b.doc.created_at) - new Date(a.doc.created_at));
+  const recent = entries.slice(0, 4);
+
+  if (recent.length === 0) {
+    chatAsideSeedlingSection.hidden = true;
+    return;
+  }
+  chatAsideSeedlingList.innerHTML = "";
+  recent.forEach(({ topic, doc }) => {
+    const meta = `${doc.title} · ${formatRelativeTime(doc.created_at)}`;
+    chatAsideSeedlingList.appendChild(makeChatAsideItem(topic, meta, () => goToDocument(doc.id)));
+  });
+  chatAsideSeedlingSection.hidden = false;
+}
+
+// 실제 저장된 문서만 보여준다 — 스트릭이나 점수 같은 지어낸 지표는 없다.
+// "이렇게 써보세요" 박스는 데이터와 무관하게 항상 보이므로 aside 전체는 안 숨기고,
+// 데이터 의존적인 두 섹션만 각자 내용이 있을 때만 켠다.
+function renderHomeSidebar(docs) {
+  if (!docs.length) {
+    chatAsideRecentSection.hidden = true;
+    renderSeedlingSidebar(docs);
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const todayCount = docs.filter((d) => d.created_at.startsWith(today)).length;
+  chatAsideToday.hidden = todayCount === 0;
+  if (todayCount > 0) chatAsideToday.textContent = `오늘 ${todayCount}건 저장`;
+
+  const recent = [...docs]
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, 4);
+
+  chatAsideList.innerHTML = "";
+  recent.forEach((doc) => {
+    const meta = `${DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type} · ${formatRelativeTime(doc.created_at)}`;
+    chatAsideList.appendChild(makeChatAsideItem(doc.title, meta, () => goToDocument(doc.id)));
+  });
+  chatAsideRecentSection.hidden = false;
+
+  renderSeedlingSidebar(docs);
+}
+
+function renderNoteMeta(container, frontmatter) {
+  if (!frontmatter) {
+    container.hidden = true;
+    return;
+  }
+  const parts = [];
+  for (const [field, label] of Object.entries(NOTE_META_CHIP_FIELDS)) {
+    const values = frontmatter[field];
+    if (!Array.isArray(values) || values.length === 0) continue;
+    const chips = values.map((v) => `<span class="note-meta-chip">${escapeHtml(String(v))}</span>`).join("");
+    parts.push(`<div class="note-meta-row"><span class="note-meta-label">${label}</span>${chips}</div>`);
+  }
+  if (typeof frontmatter.actionplan === "string" && frontmatter.actionplan.trim()) {
+    parts.push(`
+      <div class="note-meta-row note-meta-action">
+        <span class="note-meta-label">다음 행동</span>
+        <span class="note-meta-action-text"></span>
+      </div>
+    `);
+  }
+  container.hidden = parts.length === 0;
+  container.innerHTML = parts.join("");
+  const actionText = container.querySelector(".note-meta-action-text");
+  if (actionText) actionText.textContent = frontmatter.actionplan.trim();
+}
 
 let documentsPromise = null;
 let allDocuments = [];
@@ -515,11 +773,19 @@ function renderDocList(docs) {
         <p class="doc-card-meta"></p>
       </div>
       <p class="doc-card-excerpt"></p>
+      <div class="doc-card-meta-chips"></div>
       <div class="doc-card-tags"></div>
     `;
     card.querySelector(".doc-card-title").textContent = doc.title;
     card.querySelector(".doc-card-excerpt").textContent = doc.excerpt;
     card.querySelector(".doc-card-meta").textContent = formatDocDate(doc.created_at);
+    const metaChipsEl = card.querySelector(".doc-card-meta-chips");
+    cardPreviewChips(doc.frontmatter).forEach((label) => {
+      const chip = document.createElement("span");
+      chip.className = "note-meta-chip";
+      chip.textContent = label;
+      metaChipsEl.appendChild(chip);
+    });
     const tagsEl = card.querySelector(".doc-card-tags");
     doc.tags.forEach((tag) => {
       const chip = document.createElement("span");
@@ -603,35 +869,66 @@ async function openDocument(docId, scrollQuery) {
     const doc = await res.json();
 
     docReaderBody.innerHTML = `
-      <header class="doc-reader-head">
-        <div class="doc-reader-head-main">
-          <p class="doc-reader-eyebrow"></p>
-          <h2 class="doc-reader-title"></h2>
-        </div>
-        <button type="button" class="doc-chat-open-trigger" id="doc-chat-open-trigger">💬 질문</button>
-      </header>
-      <div class="doc-reader-tags">
-        <div class="tag-chip-list" id="reader-tag-list"></div>
-        <form class="tag-add-form" id="tag-add-form">
-          <button type="button" class="tag-add-chip" id="tag-add-trigger">+ 태그</button>
-          <input type="text" id="tag-add-input" class="tag-add-input" placeholder="태그 이름" maxlength="30" autocomplete="off" hidden />
-        </form>
+      <div class="doc-reader-layout">
+        <article class="doc-reader-main">
+          <header class="doc-reader-head">
+            <div class="doc-reader-head-main">
+              <p class="doc-reader-eyebrow"></p>
+              <h2 class="doc-reader-title"></h2>
+            </div>
+            <button type="button" class="doc-chat-open-trigger" id="doc-chat-open-trigger">💬 질문</button>
+          </header>
+          <div class="agent-text doc-reader-content"></div>
+        </article>
+        <aside class="doc-reader-aside">
+          <div class="reader-info-card">
+            <p class="reader-info-title">문서 정보</p>
+            <dl class="reader-info-list">
+              <div class="reader-info-row"><dt>유형</dt><dd id="reader-info-type"></dd></div>
+              <div class="reader-info-row"><dt>작성일</dt><dd id="reader-info-date"></dd></div>
+            </dl>
+            <div class="doc-reader-tags">
+              <div class="tag-chip-list" id="reader-tag-list"></div>
+              <form class="tag-add-form" id="tag-add-form">
+                <button type="button" class="tag-add-chip" id="tag-add-trigger">+ 태그</button>
+                <input type="text" id="tag-add-input" class="tag-add-input" placeholder="태그 이름" maxlength="30" autocomplete="off" hidden />
+              </form>
+            </div>
+            <div class="note-meta" id="note-meta" hidden></div>
+          </div>
+          <div class="reader-info-card reader-panel-card">
+            <div class="reader-panel-tabs" role="tablist">
+              <button type="button" class="reader-panel-tab" id="reader-tab-toc" role="tab">목차</button>
+              <button type="button" class="reader-panel-tab" id="reader-tab-chat" role="tab">💬 채팅</button>
+            </div>
+            <div class="reader-panel-body">
+              <nav class="reader-toc" id="reader-toc" role="tabpanel"></nav>
+              <div class="reader-chat-mount" id="reader-chat-mount" role="tabpanel" hidden></div>
+            </div>
+          </div>
+        </aside>
       </div>
-      <div class="agent-text doc-reader-content"></div>
     `;
     docReaderBody.querySelector(".doc-reader-title").textContent = doc.title;
     docReaderBody.querySelector(".doc-reader-eyebrow").textContent =
       `${DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type} · ${formatDocDate(doc.created_at)}`;
+    docReaderBody.querySelector("#reader-info-type").textContent = DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type;
+    docReaderBody.querySelector("#reader-info-date").textContent = formatDocDate(doc.created_at);
     const contentEl = docReaderBody.querySelector(".doc-reader-content");
     renderMarkdownInto(contentEl, doc.content);
     wireTocLinks(contentEl);
+    const hasToc = renderReaderToc(docReaderBody.querySelector("#reader-toc"), contentEl);
     renderReaderTags(doc.id, doc.tags);
+    renderNoteMeta(docReaderBody.querySelector("#note-meta"), doc.frontmatter);
 
     currentDocId = doc.id;
     docChatHistory = [];
     docChatThread.innerHTML = "";
+    docReaderBody.querySelector("#reader-chat-mount").appendChild(readerChat);
+    readerChat.hidden = false;
+    const activateReaderTab = wireReaderPanelTabs(docReaderBody, hasToc);
     docReaderBody.querySelector("#doc-chat-open-trigger").addEventListener("click", () => {
-      docChatPanel.classList.add("is-open");
+      activateReaderTab("chat");
       docChatInput.focus();
     });
     // force a reflow so removing+re-adding the class restarts the animation
@@ -799,6 +1096,9 @@ function scrollToBottom() {
 
 function dismissEmptyState() {
   if (!emptyState.hidden) emptyState.hidden = true;
+  examples.hidden = true;
+  // 대화가 시작되면 온보딩용 안내는 접고, 사이드바는 최근 활동/복습 대기에 내준다
+  chatAsideGuideSection.hidden = true;
 }
 
 function createTurn(kind) {
@@ -838,6 +1138,21 @@ function addPendingTurn() {
 function addAgentTurn(data) {
   const filedDocs = data.saved_documents || [];
   const hasFiled = filedDocs.length > 0;
+  const newDailyNotes = filedDocs.filter((d) => d.type === "dailynote").length;
+  if (newDailyNotes > 0) {
+    dailyNoteCount += newDailyNotes;
+    setPlantStage(dailyNoteCount, { animate: true });
+  }
+  if (hasFiled) {
+    documentsPromise = null; // 방금 저장된 게 목록/최근 활동에 반영되도록 강제 재조회
+    ensureDocumentsLoaded()
+      .then((docs) => {
+        dailyNoteCount = docs.filter((d) => d.doc_type === "dailynote").length;
+        setPlantStage(dailyNoteCount);
+        renderHomeSidebar(docs);
+      })
+      .catch(() => {});
+  }
   const hasAnswer = Array.isArray(data.tools_used) && data.tools_used.includes("answer_question");
   const hasMindmap = Boolean(data.mindmap_plaintext);
   const kind = hasMindmap ? "mindmap" : hasFiled ? "filed" : hasAnswer ? "answer" : "plain";
@@ -871,6 +1186,12 @@ function addAgentTurn(data) {
     note.className = "agent-note";
     note.textContent = data.answer;
     content.appendChild(note);
+    if (filedDocs.some((doc) => doc.type === "dailynote")) {
+      const tip = document.createElement("p");
+      tip.className = "agent-note agent-note-tip";
+      tip.textContent = "💡 오늘 배운 것들, 마인드맵으로도 볼 수 있어요.";
+      content.appendChild(tip);
+    }
   } else if (hasAnswer) {
     content.innerHTML = `
       <p class="turn-label is-answer">answer</p>
@@ -1017,6 +1338,8 @@ function resetChat() {
     if (child !== emptyState) child.remove();
   });
   emptyState.hidden = false;
+  if (examples.children.length > 0) examples.hidden = false;
+  chatAsideGuideSection.hidden = false;
 
   threadId = randomId();
   localStorage.setItem(THREAD_KEY, threadId);
@@ -1032,6 +1355,14 @@ newChatBtn.addEventListener("click", resetChat);
 
 submitBtn.disabled = true;
 loadCorpus();
+
+ensureDocumentsLoaded()
+  .then((docs) => {
+    dailyNoteCount = docs.filter((d) => d.doc_type === "dailynote").length;
+    setPlantStage(dailyNoteCount);
+    renderHomeSidebar(docs);
+  })
+  .catch(() => {});
 
 const [initialPanel, initialDocId] = location.hash.replace("#", "").split("/");
 if (initialPanel === "docs" || initialPanel === "documents") {
