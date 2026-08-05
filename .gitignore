@@ -38,6 +38,7 @@ docs/retro-7th-week.md
 # 개인 작업/기획 메모 — 레포에 안 실음
 docs/*.md
 !docs/README.md
+!docs/ENGINEERING.md
 
 # 스파이크/노트북 산출물
 tests/test_visualizer.ipynb
@@ -45,6 +46,9 @@ tests/*.html
 
 # interface-design 스킬의 로컬 스냅샷/시스템 메모 — 도구 산출물, 레포엔 안 실음
 .interface-design/
+
+# brainstorming 스킬의 비주얼 컴패니언 목업 산출물 — 로컬 상태, 레포엔 안 실음
+.superpowers/
 
 .pytest_cache/
 .ruff_cache/
