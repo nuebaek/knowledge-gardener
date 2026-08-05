@@ -16,6 +16,7 @@ class DocumentSummary(BaseModel):
     created_at: str
     doc_type: str
     tags: list[str] = []
+    frontmatter: dict[str, object] | None = None
 
 
 class DocumentDetail(BaseModel):
@@ -26,6 +27,7 @@ class DocumentDetail(BaseModel):
     created_at: str
     doc_type: str
     tags: list[str] = []
+    frontmatter: dict[str, object] | None = None
 
 
 class TagRequest(BaseModel):

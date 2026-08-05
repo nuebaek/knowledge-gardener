@@ -1,6 +1,8 @@
 import re
+from datetime import date, datetime
 from pathlib import Path
 
+import yaml
 from fastapi import HTTPException
 
 from app.core import catalog
@@ -24,6 +26,24 @@ def _strip_frontmatter(text: str) -> str:
         return text
     parts = text.split("---", 2)
     return parts[2].lstrip("\n") if len(parts) == 3 else text
+
+
+# writer.py already writes this frontmatter (topic/related_concepts/keywords/actionplan
+# etc.) at save time — surface it as-is instead of re-deriving similar info from the
+# rendered markdown body, which would just be guessing.
+def _parse_frontmatter(text: str) -> dict[str, object] | None:
+    if not text.startswith("---"):
+        return None
+    parts = text.split("---", 2)
+    if len(parts) != 3:
+        return None
+    try:
+        data = yaml.safe_load(parts[1])
+    except yaml.YAMLError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return {k: (v.isoformat() if isinstance(v, (date, datetime)) else v) for k, v in data.items()}
 
 
 def _excerpt(text: str, limit: int = 140) -> str:
@@ -53,15 +73,16 @@ def _to_summary(row) -> DocumentSummary | None:
     path = PROJECT_ROOT / row["source_path"]
     if not path.exists():
         return None
-    text = _strip_frontmatter(path.read_text(encoding="utf-8"))
+    raw = path.read_text(encoding="utf-8")
     return DocumentSummary(
         id=row["source_path"],
         title=row["title"],
-        excerpt=_excerpt(text),
+        excerpt=_excerpt(_strip_frontmatter(raw)),
         char_count=row["char_count"],
         created_at=row["created_at"],
         doc_type=row["doc_type"],
         tags=row["tags"].split(",") if row["tags"] else [],
+        frontmatter=_parse_frontmatter(raw),
     )
 
 
@@ -79,15 +100,16 @@ def get_document(doc_id: str) -> DocumentDetail:
     row = catalog.get_document(doc_id)
     if row is None:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
-    text = _strip_frontmatter(_resolve(doc_id).read_text(encoding="utf-8"))
+    raw = _resolve(doc_id).read_text(encoding="utf-8")
     return DocumentDetail(
         id=doc_id,
         title=row["title"],
-        content=text,
+        content=_strip_frontmatter(raw),
         char_count=row["char_count"],
         created_at=row["created_at"],
         doc_type=row["doc_type"],
         tags=catalog.list_tags(doc_id),
+        frontmatter=_parse_frontmatter(raw),
     )
 
 
