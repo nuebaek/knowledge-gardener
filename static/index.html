@@ -19,8 +19,8 @@
 <body>
   <div id="root-app" class="app">
     <nav class="rail" aria-label="패널 전환" id="rail">
-      <div class="rail-mark" aria-hidden="true">
-        <svg class="rail-mark-sprout" viewBox="0 0 48 64" width="24" height="32" aria-hidden="true">
+      <div class="rail-mark" id="rail-mark" aria-hidden="true" title="새싹">
+        <svg class="rail-mark-sprout" id="rail-mark-svg" viewBox="0 0 48 64" width="24" height="32" aria-hidden="true">
           <path class="rail-mark-leaf" d="M24 36 C 12 36, 6 26, 8 13 C 19 15, 25 24, 24 36 Z" />
           <path class="rail-mark-leaf" d="M24 28 C 36 28, 42 19, 40 8 C 30 10, 24 17, 24 28 Z" />
           <path class="rail-mark-stem" d="M24 58 L24 21" />
@@ -86,31 +86,57 @@
         </button>
       </header>
 
-      <main class="transcript" id="transcript">
-        <div class="transcript-inner" id="transcript-inner">
-          <div class="empty" id="empty-state">
-            <svg class="sprout-mark" viewBox="0 0 48 64" width="48" height="64" aria-hidden="true">
-              <path class="sprout-leaf sprout-leaf-l"
-                d="M24 36 C 12 36, 6 26, 8 13 C 19 15, 25 24, 24 36 Z" />
-              <path class="sprout-leaf sprout-leaf-r"
-                d="M24 28 C 36 28, 42 19, 40 8 C 30 10, 24 17, 24 28 Z" />
-              <path class="sprout-stem" d="M24 58 L24 21" />
-              <circle class="sprout-seed" cx="24" cy="58" r="4" />
-            </svg>
-            <p class="empty-text">질문하거나, 오늘 배운 내용을 정리해보세요.</p>
-            <p class="empty-hint">근거가 있으면 답하고, 기록할 내용이면 저장해둡니다.</p>
-            <div class="examples" id="examples" role="group" aria-label="질문 예시" hidden></div>
-          </div>
-        </div>
-      </main>
+      <div class="panel-body">
+        <div class="panel-main">
+          <main class="transcript" id="transcript">
+            <div class="transcript-inner" id="transcript-inner">
+              <div class="empty" id="empty-state">
+                <svg class="sprout-mark" viewBox="0 0 48 64" width="48" height="64" aria-hidden="true">
+                  <path class="sprout-leaf sprout-leaf-l"
+                    d="M24 36 C 12 36, 6 26, 8 13 C 19 15, 25 24, 24 36 Z" />
+                  <path class="sprout-leaf sprout-leaf-r"
+                    d="M24 28 C 36 28, 42 19, 40 8 C 30 10, 24 17, 24 28 Z" />
+                  <path class="sprout-stem" d="M24 58 L24 21" />
+                  <circle class="sprout-seed" cx="24" cy="58" r="4" />
+                </svg>
+                <p class="empty-text">질문하거나, 오늘 배운 내용을 정리해보세요.</p>
+                <p class="empty-hint">근거가 있으면 답하고, 기록할 내용이면 저장해둡니다. 오른쪽의 "이렇게 써보세요"도 참고하세요.</p>
+              </div>
+            </div>
+          </main>
 
-      <form class="composer" id="composer" autocomplete="off">
-        <label class="sr-only" for="message">메시지 입력</label>
-        <div class="prompt-bar">
-          <textarea id="message" name="message" placeholder="질문 또는 오늘 배운 내용" rows="1" required></textarea>
-          <button type="submit" id="submit-btn" aria-label="보내기">↑</button>
+          <div class="examples" id="examples" role="group" aria-label="질문 예시" hidden></div>
+
+          <form class="composer" id="composer" autocomplete="off">
+            <label class="sr-only" for="message">메시지 입력</label>
+            <div class="prompt-bar">
+              <textarea id="message" name="message" placeholder="질문 또는 오늘 배운 내용" rows="1" required></textarea>
+              <button type="submit" id="submit-btn" aria-label="보내기">↑</button>
+            </div>
+          </form>
         </div>
-      </form>
+
+        <aside class="chat-aside" id="chat-aside" aria-label="최근 활동 및 안내">
+          <div class="chat-aside-section" id="chat-aside-recent-section" hidden>
+            <p class="chat-aside-title">⏳ 최근 활동</p>
+            <p class="chat-aside-today" id="chat-aside-today" hidden></p>
+            <div class="chat-aside-list" id="chat-aside-list"></div>
+          </div>
+          <div class="chat-aside-section" id="chat-aside-seedling-section" hidden>
+            <p class="chat-aside-title">🌱 최근 복습 대기</p>
+            <div class="chat-aside-list" id="chat-aside-seedling-list"></div>
+          </div>
+          <div class="chat-aside-section" id="chat-aside-guide-section">
+            <p class="chat-aside-title">💡 이렇게 써보세요</p>
+            <div class="chat-aside-guide">
+              <p>질문하면 학습 자료를 근거로 답해요.</p>
+              <p>오늘 배운 내용을 말하면 인출 세션을 시작해요.</p>
+              <p>오늘 배운 것들을 마인드맵으로도 볼 수 있어요.</p>
+              <p>문서함에서 저장된 기록을 언제든 다시 볼 수 있어요.</p>
+            </div>
+          </div>
+        </aside>
+      </div>
     </section>
 
     <section class="panel" id="panel-documents" role="tabpanel" aria-labelledby="tab-documents" tabindex="0" hidden>
@@ -135,22 +161,21 @@
           </div>
           <article class="doc-reader-body" id="doc-reader-body" hidden></article>
         </div>
-        <aside class="doc-chat-panel" id="doc-chat-panel" aria-label="문서 질문 패널">
-          <div class="doc-chat-panel-inner">
-            <div class="doc-chat-panel-head">
-              <span class="doc-chat-panel-title"><span aria-hidden="true">💬</span> 이 문서에 대해 질문하기</span>
-              <button type="button" class="doc-chat-panel-close" id="doc-chat-panel-close" aria-label="질문 패널 닫기">×</button>
-            </div>
-            <div class="doc-chat-thread" id="doc-chat-thread"></div>
-            <form class="doc-chat-form" id="doc-chat-form">
-              <input type="text" id="doc-chat-input" class="doc-chat-input"
-                placeholder="이 문서에 대해 질문하기..." autocomplete="off" />
-              <button type="submit" class="doc-chat-submit" aria-label="질문 보내기">↑</button>
-            </form>
-          </div>
-        </aside>
       </div>
     </section>
+
+    <!-- 문서 전환마다 doc-reader-body가 통째로 다시 그려져서, 채팅 DOM은 여기 밖에 한 번만
+         만들어두고 openDocument()가 매번 목차/채팅 탭 슬롯으로 옮겨 붙인다(리스너 재바인딩 불필요) -->
+    <div class="reader-chat" id="reader-chat" hidden>
+      <div class="doc-chat-thread" id="doc-chat-thread"></div>
+      <p class="doc-chat-hint">문서에 없는 내용은 "자료에 없음"으로 답합니다.</p>
+      <form class="doc-chat-form" id="doc-chat-form">
+        <input type="text" id="doc-chat-input" class="doc-chat-input"
+          placeholder="이 문서에 대해 질문하기..." autocomplete="off" />
+        <button type="submit" class="doc-chat-submit" aria-label="질문 보내기">↑</button>
+      </form>
+      <button type="button" class="doc-chat-reset" id="doc-chat-reset">대화 초기화</button>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
