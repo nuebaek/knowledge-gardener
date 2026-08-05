@@ -65,12 +65,6 @@ def build_embeddings(model_name: str | None = None):
 
 def build_chroma_client():
     mode = os.getenv("CHROMA_MODE", "local").lower()
-    if mode == "cloud":
-        return chromadb.CloudClient(
-            tenant=os.getenv("CHROMA_TENANT"),
-            database=os.getenv("CHROMA_DATABASE"),
-            api_key=os.getenv("CHROMA_API_KEY"),
-        )
     if mode == "server":
         return chromadb.HttpClient(
             host=os.getenv("CHROMA_HOST", "localhost"),
@@ -212,6 +206,11 @@ def build_judge_llm():
         api_key=os.getenv("ANTHROPIC_API_KEY"),
         max_retries=0,
     )
+
+
+@lru_cache(maxsize=1)
+def default_llm():
+    return apply_fallback(build_llm())
 
 
 def apply_fallback(model, configure=lambda m: m, fallback=None):

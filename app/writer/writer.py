@@ -9,7 +9,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from pathlib import Path
 from app.core import catalog
 from app.core.paths import WRITER_DIR
-from app.rag.chain import apply_fallback, build_llm
+from app.rag.chain import default_llm
 from app.writer.model import DailynoteEntry, WeeklynoteEntry, TilEntry
 
 DAILY_NOTE_PROMPT = ChatPromptTemplate.from_messages([
@@ -152,10 +152,6 @@ TIL_PROMPT = ChatPromptTemplate.from_messages([
 BASE_DIR = WRITER_DIR
 
 
-@lru_cache(maxsize=1)
-def _llm():
-    return apply_fallback(build_llm())
-
 def slugify(text: str, max_len: int = 20) -> str:
     slug = re.sub(r"\s+", "-", text.strip())
     slug = re.sub(r"[^\w\-가-힣]", "", slug)
@@ -215,7 +211,7 @@ def write_daily_note(
         "learned": learned,
     }).to_messages()
 
-    response = _llm().invoke(messages)
+    response = default_llm().invoke(messages)
 
     slug = slugify(topic)
     return save_docs("dailynote", f"{today}-{slug}", entry, response.content, title=topic)
@@ -261,7 +257,7 @@ def write_weekly_note(as_of: str | None = None) -> Path | None:
         "daily_notes": "\n\n---\n\n".join(daily_bodies),
     }).to_messages()
 
-    response = _llm().invoke(messages)
+    response = default_llm().invoke(messages)
 
     title = f"{monday.isoformat()} ~ {sunday.isoformat()} 주간노트"
     return save_docs("weeklynote", monday.isoformat(), entry, response.content, title=title, overwrite=True)
@@ -295,7 +291,7 @@ def write_tilnote(
         "keywords": keywords,
     }).to_messages()
 
-    response = _llm().invoke(messages)
+    response = default_llm().invoke(messages)
 
     slug = slugify(what)
     title = what if len(what) <= 60 else f"{what[:60]}…"
