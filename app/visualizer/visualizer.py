@@ -1,7 +1,5 @@
-from functools import lru_cache
-
 from langchain_core.prompts import ChatPromptTemplate
-from app.rag.chain import apply_fallback, build_llm
+from app.rag.chain import default_llm
 
 from app.services import corpus_service
 
@@ -31,18 +29,13 @@ MINDMAP_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
-@lru_cache(maxsize=1)
-def _llm():
-    return apply_fallback(build_llm())
-
-
 def generate_mindmap_plaintext(documents: list[str]) -> str:
     united_document = "\n\n---\n\n".join(documents)
     messages = MINDMAP_PROMPT.invoke({
         "doc_count": len(documents),
         "documents": united_document,
     }).to_messages()
-    return _llm().invoke(messages).content
+    return default_llm().invoke(messages).content
 
 
 def visualize_mindmap_text(documents: list[str]):
