@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from functools import lru_cache
 
 import chromadb
@@ -8,11 +9,12 @@ from langchain_chroma import Chroma
 from langchain_core.language_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableLambda, RunnableParallel, RunnablePassthrough
+from langchain_core.runnables import RunnableLambda
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
 )
+from rank_bm25 import BM25Okapi
 
 from app.core import catalog
 from app.core.paths import CHROMA_DIR, PROJECT_ROOT
@@ -25,7 +27,10 @@ logger = logging.getLogger(__name__)
 CHROMA_COLLECTION = "cs231n_v2"
 EMBED_MODEL = os.getenv("EMBED_MODEL", "dragonkue/multilingual-e5-small-ko-v2")
 TOP_K = 5
-RELEVANCE_THRESHOLD = 0.50
+RELEVANCE_THRESHOLD = float(os.getenv("RELEVANCE_THRESHOLD", "0.47"))
+# RRF는 n=210 eval에서 dense/BM25 단독보다 MRR이 낮아 프로덕션에서 기각됨(hybrid_merge
+# 독스트링 참고) — rerank_docs로 대체. RRF_K는 scripts/benchmark.py 등 eval 비교용 스윕에만 쓰임.
+RRF_K = int(os.getenv("RRF_K", "60"))
 
 
 def study_turn(llm, topic, next_topic, message, conversation) -> TurnResult:
@@ -136,7 +141,22 @@ def sync_index(vectorstore) -> int:
     return len(pending)
 
 
+_vectorstore_cache: dict = {}
+
+
 def get_vectorstore(embeddings, collection: str = CHROMA_COLLECTION):
+    # HuggingFaceEmbeddings는 pydantic 모델이라 해시가 안 돼서 @lru_cache에 못 씀 —
+    # id() 기반 수동 캐시. search_source_paths가 호출될 때마다(finalize_node가 seedling마다
+    # 루프로 부름) 매번 Chroma 클라이언트를 새로 열고 sync_index를 재실행하던 것을 막는다.
+    key = (id(embeddings), collection)
+    if key in _vectorstore_cache:
+        return _vectorstore_cache[key]
+    vectorstore = _build_vectorstore(embeddings, collection)
+    _vectorstore_cache[key] = vectorstore
+    return vectorstore
+
+
+def _build_vectorstore(embeddings, collection: str) -> "Chroma":
     client = build_chroma_client()
     existing = {c.name for c in client.list_collections()}
     if collection in existing and client.get_collection(collection).count() > 0:
@@ -156,8 +176,86 @@ def get_vectorstore(embeddings, collection: str = CHROMA_COLLECTION):
     return vectorstore
 
 
-def get_retriever(embeddings, k: int = TOP_K):
-    return get_vectorstore(embeddings).as_retriever(search_kwargs={"k": k})
+_TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣]+")
+
+# 체언/용언 어간만 남기고 조사(JX/JKO/...)·어미(EC/ETM/...)는 버린다 — "학습을"/"학습이"/
+# "학습하는"이 전부 다른 토큰이 되던 문제(정규식은 조사·어미까지 통째로 묶어서 봄)의 원인.
+_CONTENT_TAGS = {"NNG", "NNP", "NNB", "NP", "NR", "VV", "VA", "VX", "VCP", "VCN", "SL", "SH", "SN"}
+
+
+@lru_cache(maxsize=1)
+def _kiwi():
+    from kiwipiepy import Kiwi
+    return Kiwi()
+
+
+def _tokenize(text: str) -> list[str]:
+    morphs = (t.form for t in _kiwi().tokenize(text) if t.tag in _CONTENT_TAGS)
+    return [piece for form in morphs for piece in _TOKEN_RE.findall(form.lower())]
+
+
+def build_bm25(docs: list) -> BM25Okapi:
+    return BM25Okapi([_tokenize(d.page_content) for d in docs])
+
+
+def bm25_search(bm25: BM25Okapi, docs: list, query: str, k: int) -> list:
+    scores = bm25.get_scores(_tokenize(query))
+    ranked = sorted(range(len(docs)), key=lambda i: scores[i], reverse=True)
+    return [docs[i] for i in ranked[:k] if scores[i] > 0]
+
+
+def _doc_key(doc) -> str:
+    return f"{doc.metadata.get('source', '?')}::{doc.page_content[:80]}"
+
+
+def hybrid_merge(dense_docs: list, bm25_docs: list, k: int, rrf_k: int = 60) -> list:
+    """Reciprocal Rank Fusion — 프로덕션에서는 안 씀(rerank_docs로 대체됨), eval 비교용으로만 유지.
+
+    n=210(섹션 단위 gold) 실측: RRF는 rrf_k를 뭘로 스윕해도(4/10/20/60) dense 단독
+    (MRR 0.831)·BM25 단독(0.853)을 못 이김 — 약한 쪽 순위가 강한 쪽을 희석시키는 것으로
+    보임. 최종적으로 dense+BM25 후보를 cross-encoder로 재점수하는 rerank_docs()를 채택
+    (retrieval MRR 0.861, generation faithfulness 100%로 둘 다 dense 단독보다 나음).
+    상세 근거: docs/2026-08-04-hybrid-search-design.md §4, §7."""
+    scores: dict[str, float] = {}
+    docs_by_key: dict[str, object] = {}
+    for source in (dense_docs, bm25_docs):
+        for rank, doc in enumerate(source, 1):
+            key = _doc_key(doc)
+            scores[key] = scores.get(key, 0.0) + 1 / (rrf_k + rank)
+            docs_by_key.setdefault(key, doc)
+    ranked_keys = sorted(scores, key=scores.get, reverse=True)
+    return [docs_by_key[key] for key in ranked_keys[:k]]
+
+
+RERANK_MODEL = "BAAI/bge-reranker-base"
+RERANK_POOL_K = 15
+
+
+@lru_cache(maxsize=1)
+def build_reranker():
+    from sentence_transformers import CrossEncoder
+    return CrossEncoder(RERANK_MODEL, max_length=512)
+
+
+def rerank_docs(reranker, query: str, dense_docs: list, bm25_docs: list, k: int) -> tuple[list, list]:
+    """dense+BM25 후보 풀을 cross-encoder로 재점수한다. RRF(순위만 합산)는 n=210 실측에서
+    dense 단독(MRR 0.831)·BM25 단독(0.853)을 어떤 가중치로도 못 이겨서 기각했다 — 약한 쪽
+    순위가 강한 쪽을 희석시키는 것으로 보임. 리랭킹은 순위를 섞지 않고 질의-문서 쌍을
+    직접 채점하는 구조라 이 문제가 없고, 실측(같은 n=210)으로도 retrieval(MRR 0.861)·
+    generation(faithfulness 98%→100%, correctness 92%→97%) 둘 다 dense 단독보다 낫다.
+    비용은 레이턴시(+1.4초/요청, cross-encoder가 후보마다 forward pass) — 실시간 채팅이
+    아닌 개인 학습 도구라 감수. 근거: docs/2026-08-04-hybrid-search-design.md §7."""
+    seen, pool = set(), []
+    for doc in dense_docs + bm25_docs:
+        key = (doc.metadata.get("source", "?"), doc.page_content[:80])
+        if key not in seen:
+            seen.add(key)
+            pool.append(doc)
+    if not pool:
+        return [], []
+    scores = reranker.predict([(query, doc.page_content) for doc in pool])
+    ranked = sorted(zip(pool, scores), key=lambda pair: pair[1], reverse=True)[:k]
+    return [doc for doc, _ in ranked], [float(score) for _, score in ranked]
 
 
 def search_source_paths(query: str, k: int = TOP_K) -> list[str]:
@@ -431,27 +529,6 @@ def ingest():
     embeddings = build_embeddings()
     vectorstore = get_vectorstore(embeddings)
     print(f"인덱싱 완료: {vectorstore._collection.count()}개 청크")
-
-
-def build_rag_chain():
-    embeddings = build_embeddings()
-    retriever = get_retriever(embeddings)
-    llm = apply_fallback(build_llm())
-
-    retrieve = RunnableParallel(docs=retriever, question=RunnablePassthrough())
-    generate = (
-        {
-            "context": lambda x: _format_docs(x["docs"]),
-            "question": lambda x: x["question"],
-        }
-        | PROMPT
-        | llm
-        | StrOutputParser()
-    )
-    return retrieve | RunnableParallel(
-        answer=generate,
-        sources=lambda x: _extract_sources(x["docs"]),
-    )
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from langgraph.graph import MessagesState
 from langchain_core.messages import AIMessage, SystemMessage
 from app.rag.chain import (
     _extract_sources, apply_fallback, TOP_K, RELEVANCE_THRESHOLD, study_turn,
-    TOPIC_EXTRACT_PROMPT, generate_recall_question,
+    TOPIC_EXTRACT_PROMPT, generate_recall_question, bm25_search, rerank_docs, RERANK_POOL_K,
 )
 from app.rag.state import GraphState, StudySessionState
 from app.rag.study_session import apply_verdict, flatten_conversation, is_complete, serialize_for_daily_note
@@ -29,7 +29,7 @@ def make_agent_node(llm, tools, system_prompt):
     return agent_node
 
 
-def make_nodes(vectorstore, prompt, rewrite_prompt, llm):
+def make_nodes(vectorstore, prompt, rewrite_prompt, llm, bm25=None, bm25_docs=None, reranker=None):
     llm = apply_fallback(llm)
 
     def retrieve_node(state: GraphState):
@@ -38,6 +38,13 @@ def make_nodes(vectorstore, prompt, rewrite_prompt, llm):
             question = rewritten_question
         else:
             question = state["question"]
+
+        if reranker is not None and bm25 is not None:
+            dense_hits = vectorstore.similarity_search(question, k=RERANK_POOL_K)
+            bm25_hits = bm25_search(bm25, bm25_docs, question, RERANK_POOL_K)
+            docs, scores = rerank_docs(reranker, question, dense_hits, bm25_hits, TOP_K)
+            return {"document": docs, "doc_scores": scores}
+
         results = vectorstore.similarity_search_with_relevance_scores(question, k=TOP_K)
         return {
             "document": [doc for doc, _ in results],
@@ -58,8 +65,14 @@ def make_nodes(vectorstore, prompt, rewrite_prompt, llm):
         top_score = max(state["doc_scores"])
         is_relevant = top_score > RELEVANCE_THRESHOLD
         logger.debug("grade_docs top_score=%.3f threshold=%s -> is_relevant=%s", top_score, RELEVANCE_THRESHOLD, is_relevant)
-        return {"is_relevant": is_relevant}
-
+        # top-1만 통과 기준으로 쓰고 나머지 top-k를 그대로 컨텍스트/출처에 흘려보내면,
+        # 2~5등처럼 threshold 밑인 문서까지 답변 근거·출처로 섞여 들어간다 — 문서 단위로 다시 거른다.
+        kept = [(d, s) for d, s in zip(state["document"], state["doc_scores"]) if s > RELEVANCE_THRESHOLD]
+        return {
+            "is_relevant": is_relevant,
+            "document": [d for d, _ in kept],
+            "doc_scores": [s for _, s in kept],
+        }
 
     def rewrite_query_node(state: GraphState):
         current_query = state.get("rewritten_question") or state["question"]

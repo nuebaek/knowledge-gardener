@@ -3,7 +3,7 @@ from langgraph.prebuilt import tools_condition, ToolNode
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app.rag.state import GraphState, StudySessionState
-from app.rag.chain import build_embeddings, build_llm, get_vectorstore, search_source_paths, PROMPT, REWRITE_PROMPT, AGENT_SYSTEM_PROMPT
+from app.rag.chain import build_embeddings, build_llm, get_vectorstore, search_source_paths, PROMPT, REWRITE_PROMPT, AGENT_SYSTEM_PROMPT, build_bm25, load_split_docs, build_reranker
 from app.rag.nodes import make_nodes, make_agent_node, make_study_node
 
 
@@ -30,7 +30,16 @@ def build_rag_graph():
     vectorstore = get_vectorstore(embeddings)
     llm = build_llm()
 
-    retrieve_node, generate_node, grade_docs_node, rewrite_query_node = make_nodes(vectorstore, PROMPT, REWRITE_PROMPT, llm)
+    # dense+BM25 후보를 cross-encoder로 재점수한다(RRF는 n=210 실측에서 기각됨,
+    # docs/2026-08-04-hybrid-search-design.md §4/§7) — 인덱스·리랭커는 그래프 빌드 시
+    # 한 번만 만들고(코퍼스가 작아 매 요청 재구축은 낭비), 이후 매 질문마다 재사용.
+    bm25_docs = load_split_docs()
+    bm25 = build_bm25(bm25_docs)
+    reranker = build_reranker()
+
+    retrieve_node, generate_node, grade_docs_node, rewrite_query_node = make_nodes(
+        vectorstore, PROMPT, REWRITE_PROMPT, llm, bm25=bm25, bm25_docs=bm25_docs, reranker=reranker,
+    )
 
     graph = StateGraph(GraphState)
     graph.add_node("retrieve", retrieve_node)
