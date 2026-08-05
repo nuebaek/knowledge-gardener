@@ -206,4 +206,4 @@ def make_study_node(judge_llm, gen_llm, search_sources):
             "messages": [AIMessage(question)],
         }
 
-    return study_node, finalize_node, confirm_finalize_node
+    return study_node, finalize_node, confirm_finalize_node, confirm_topics_node

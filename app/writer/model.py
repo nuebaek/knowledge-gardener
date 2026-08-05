@@ -8,6 +8,7 @@ class DailynoteEntry(BaseModel):
     topic: str
     learned: str
     related_concepts: list[str] = []
+    seedlings: list[str] = []
 
 
 class WeeklynoteEntry(BaseModel):
