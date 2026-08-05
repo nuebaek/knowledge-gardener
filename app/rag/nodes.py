@@ -148,6 +148,7 @@ def make_study_node(judge_llm, gen_llm, search_sources):
                 {"answered": state["answered"], "seedlings": enriched_seedlings}
             ),
             "related_concepts": topics,
+            "seedlings": [s["topic"] for s in state["seedlings"]],
         }
         raw_path = save_raw_session(**payload)
 
@@ -168,6 +169,24 @@ def make_study_node(judge_llm, gen_llm, search_sources):
                 f"오늘 답변은 저장했는데({raw_path.name}) 노트 정리에는 실패했어요. "
                 "잠시 후 다시 시도해주세요"
             )],
+        }
+
+    def confirm_topics_node(state: StudySessionState):
+        # 프런트가 체크된 항목만 selected_topics로 보낸다 — LLM에게 "이건 빼줘" 같은
+        # 자연어 재해석을 맡기지 않고, pending과의 정확한 문자열 매치로 결정론적으로 거른다.
+        selected = state.get("selected_topics")
+        pending = state["pending"]
+        kept = [t for t in pending if t in selected] if selected else pending
+        if not kept:
+            kept = pending  # 전부 해제하고 시작을 눌러도 세션 자체가 사라지진 않게
+
+        conversation = flatten_conversation(state["messages"])
+        question = generate_recall_question(gen_llm, kept[0], conversation)
+        return {
+            "pending": kept,
+            "awaiting_topic_confirm": False,
+            "selected_topics": None,
+            "messages": [AIMessage(question)],
         }
 
     def confirm_finalize_node(state: StudySessionState):

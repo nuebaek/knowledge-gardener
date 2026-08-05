@@ -835,7 +835,71 @@ function addPendingTurn() {
   return appendTurn(turn);
 }
 
+function addTopicConfirmTurn(data) {
+  const topics = data.topics || [];
+  const turn = createTurn("topics");
+  const content = turn.querySelector(".turn-content");
+  content.innerHTML = `
+    <div class="topic-card">
+      <div class="topic-card-head">
+        <span class="topic-card-title"><span aria-hidden="true">🌿</span> 오늘 학습한 주제</span>
+        <span class="topic-card-count"></span>
+      </div>
+      <p class="topic-card-sub">학습 내용에서 아래 주제를 찾았어요. 이번 세션에 포함할 항목을 확인하세요.</p>
+      <div class="topic-list"></div>
+      <div class="guide-box">
+        <p>정답을 알려주지 않고, 스스로 설명해보도록 질문해요.</p>
+        <p>설명이 어려우면 🌱로 남아 다음 복습의 출발점이 돼요.</p>
+        <p>언제든 다음 주제로 넘어갈 수 있어요.</p>
+      </div>
+      <button type="button" class="topic-card-start">이 주제로 세션 시작</button>
+    </div>
+  `;
+  content.querySelector(".topic-card-count").textContent = `${topics.length}개 추출됨`;
+
+  const list = content.querySelector(".topic-list");
+  const checkboxes = topics.map((topic) => {
+    const row = document.createElement("label");
+    row.className = "topic-row";
+    row.innerHTML = `
+      <input type="checkbox" checked />
+      <span class="topic-row-main">
+        <span class="topic-row-label"></span>
+        <span class="topic-row-source">오늘 노트에서 추출됨</span>
+      </span>
+    `;
+    row.querySelector(".topic-row-label").textContent = topic;
+    list.appendChild(row);
+    return row.querySelector("input");
+  });
+
+  const startBtn = content.querySelector(".topic-card-start");
+  const syncStartState = () => {
+    startBtn.disabled = checkboxes.every((cb) => !cb.checked);
+  };
+  checkboxes.forEach((cb) => cb.addEventListener("change", syncStartState));
+  syncStartState();
+
+  startBtn.addEventListener("click", () => {
+    const selected = checkboxes
+      .map((cb, i) => (cb.checked ? topics[i] : null))
+      .filter(Boolean);
+    checkboxes.forEach((cb) => (cb.disabled = true));
+    startBtn.disabled = true;
+    startBtn.textContent = "시작하는 중…";
+    addUserTurn("이 주제로 인출 세션을 시작할게요.");
+    requestReply("이 주제로 인출 세션을 시작할게요.", selected);
+  });
+
+  appendTurn(turn);
+  announcer.textContent = `오늘 학습한 주제 ${topics.length}개를 찾았습니다. 세션에 포함할 항목을 확인해주세요.`;
+}
+
 function addAgentTurn(data) {
+  if (data.awaiting_topic_confirm) {
+    addTopicConfirmTurn(data);
+    return;
+  }
   const filedDocs = data.saved_documents || [];
   const hasFiled = filedDocs.length > 0;
   const hasAnswer = Array.isArray(data.tools_used) && data.tools_used.includes("answer_question");
@@ -934,7 +998,7 @@ let isPending = false;
 
 // doesn't add the user turn itself — caller must already have it on screen
 // (typed, or a retry) so retries don't duplicate the bubble
-async function requestReply(message) {
+async function requestReply(message, selectedTopics) {
   if (isPending) return;
   isPending = true;
   submitBtn.disabled = true;
@@ -943,10 +1007,12 @@ async function requestReply(message) {
   announcer.textContent = "에이전트가 생각하는 중입니다.";
 
   try {
+    const body = { message, thread_id: threadId };
+    if (selectedTopics) body.selected_topics = selectedTopics;
     const res = await fetch("/converse", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, thread_id: threadId }),
+      body: JSON.stringify(body),
     });
 
     pending.remove();
