@@ -1,5 +1,4 @@
 from datetime import date as _date, timedelta
-from functools import lru_cache
 import json
 import re
 
@@ -185,13 +184,13 @@ def save_docs(dir, filename, entry, body, title, overwrite: bool = False) -> Pat
     return out_path
 
 
-def save_raw_session(topic: str, learned: str, related_concepts: list[str]) -> Path:
+def save_raw_session(topic: str, learned: str, related_concepts: list[str], seedlings: list[str] | None = None) -> Path:
     today = _date.today()
     slug = slugify(topic)
     out_path = BASE_DIR / "dailynote" / "raw" / f"{today}-{slug}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    payload = {"topic": topic, "learned": learned, "related_concepts": related_concepts}
+    payload = {"topic": topic, "learned": learned, "related_concepts": related_concepts, "seedlings": seedlings or []}
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return out_path
 
@@ -199,7 +198,8 @@ def save_raw_session(topic: str, learned: str, related_concepts: list[str]) -> P
 def write_daily_note(
         topic: str,
         learned: str,
-        related_concepts: list[str] | None
+        related_concepts: list[str] | None,
+        seedlings: list[str] | None = None,
 ) -> Path:
     today = _date.today()
     entry = DailynoteEntry(
@@ -207,6 +207,7 @@ def write_daily_note(
         topic=topic,
         learned=learned,
         related_concepts=related_concepts or [],
+        seedlings=seedlings or [],
     )
 
     messages = DAILY_NOTE_PROMPT.invoke({
