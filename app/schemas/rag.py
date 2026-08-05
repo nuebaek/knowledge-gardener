@@ -17,6 +17,7 @@ class TurnResult(BaseModel):
 class ConverseRequest(BaseModel):
     message: str
     thread_id: str
+    selected_topics: list[str] | None = None
 
 
 class SavedDocument(BaseModel):
@@ -31,6 +32,8 @@ class ConverseResponse(BaseModel):
     mindmap_plaintext: str | None = None
     sources: list[str] = []
     recall: list[str] = []
+    awaiting_topic_confirm: bool = False
+    topics: list[str] = []
 
 
 class ThreadMessage(BaseModel):

@@ -18,6 +18,8 @@ def route_after_grade(state: GraphState):
 def check_pending(state: StudySessionState):
     if state.get("awaiting_finalize"):
         return "confirm_finalize"
+    if state.get("awaiting_topic_confirm"):
+        return "confirm_topics"
     return "study" if state.get("pending") else "agent"
 
 
@@ -60,17 +62,22 @@ def build_agent_graph(llm=None, tools=None, checkpointer=None, search_sources=No
     # 오프라인 벤치마크(scripts/benchmark.py 등)의 judge 전용, 실사용 경로엔 안 태운다.
     judge_llm = judge_llm if judge_llm is not None else llm
     agent_node = make_agent_node(llm, tools, AGENT_SYSTEM_PROMPT)
-    study_node, finalize_node, confirm_finalize_node = make_study_node(judge_llm, llm, search_sources)
+    study_node, finalize_node, confirm_finalize_node, confirm_topics_node = make_study_node(judge_llm, llm, search_sources)
 
     graph = StateGraph(StudySessionState)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", ToolNode(tools))
     graph.add_node("study", study_node)
     graph.add_node("confirm_finalize", confirm_finalize_node)
+    graph.add_node("confirm_topics", confirm_topics_node)
 
-    graph.add_conditional_edges(START, check_pending, {"agent": "agent", "study": "study", "confirm_finalize": "confirm_finalize"})
+    graph.add_conditional_edges(START, check_pending, {
+        "agent": "agent", "study": "study",
+        "confirm_finalize": "confirm_finalize", "confirm_topics": "confirm_topics",
+    })
     graph.add_edge("study", END)
     graph.add_edge("confirm_finalize", END)
+    graph.add_edge("confirm_topics", END)
     graph.add_conditional_edges("agent", tools_condition)
     graph.add_conditional_edges("tools", route_after_tools, {END: END, "agent": "agent"})
 

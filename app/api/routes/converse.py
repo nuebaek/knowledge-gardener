@@ -8,7 +8,7 @@ router = APIRouter()
 @router.post("/converse", response_model=ConverseResponse)
 def converse(req: ConverseRequest, request: Request) -> ConverseResponse:
     agent_graph = request.app.state.agent
-    return rag_service.converse(agent_graph, req.message, req.thread_id)
+    return rag_service.converse(agent_graph, req.message, req.thread_id, req.selected_topics)
 
 
 @router.get("/threads/{thread_id}")

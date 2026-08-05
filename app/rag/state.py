@@ -26,6 +26,8 @@ class StudySessionState(MessagesState):
     umbrella: str
     current_explanation: str
     awaiting_finalize: bool
+    awaiting_topic_confirm: bool
+    selected_topics: list[str] | None
     saved_documents: Annotated[list[dict], append_records]
     mindmaps: Annotated[list[str], append_records]
     sources: Annotated[list[list[str]], append_records]

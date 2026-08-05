@@ -7,7 +7,7 @@ from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
 from app.core import catalog
-from app.rag.chain import apply_fallback, build_llm, TOPIC_EXTRACT_PROMPT, generate_recall_question
+from app.rag.chain import apply_fallback, build_llm, TOPIC_EXTRACT_PROMPT
 from app.rag.graph import build_rag_graph
 from app.rag.study_session import flatten_conversation, new_session
 from app.schemas.rag import TopicList
@@ -94,13 +94,19 @@ def make_tools(llm=None, qa_graph=None):
                             tool_call_id=tool_call_id),
             ]})
 
-        question = generate_recall_question(llm, session["pending"][0], conversation)
+        # 첫 질문은 여기서 곧장 만들지 않는다 — confirm_topics 노드가 사용자가 확인/조정한
+        # 주제 목록으로 다음 턴에 만든다. 이 턴은 확인만 받고 끝난다(route_after_tools가
+        # pending을 보고 END로 보냄).
         return Command(update={
             "pending": session["pending"],
             "answered": session["answered"],
             "seedlings": session["seedlings"],
             "umbrella": session["umbrella"],
-            "messages": [ToolMessage(question, tool_call_id=tool_call_id)],
+            "awaiting_topic_confirm": True,
+            "messages": [ToolMessage(
+                "오늘 학습한 내용에서 주제를 찾았어요. 세션에 포함할 주제를 확인해주세요.",
+                tool_call_id=tool_call_id,
+            )],
         })
 
     @tool(parse_docstring=True)

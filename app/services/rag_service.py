@@ -19,13 +19,17 @@ def _content_text(content) -> str:
     return "".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in content)
 
 
-def converse(agent_graph, message: str, thread_id: str) -> ConverseResponse:
+def converse(agent_graph, message: str, thread_id: str, selected_topics: list[str] | None = None) -> ConverseResponse:
     config = {"configurable": {"thread_id": thread_id}}
     before = agent_graph.get_state(config).values
 
+    graph_input = {"messages": [("human", message)]}
+    if selected_topics is not None:
+        graph_input["selected_topics"] = selected_topics
+
     start = time.perf_counter()
     try:
-        after = agent_graph.invoke({"messages": [("human", message)]}, config=config)
+        after = agent_graph.invoke(graph_input, config=config)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Agent 실행 실패: {exc}") from exc
     finally:
@@ -51,6 +55,8 @@ def converse(agent_graph, message: str, thread_id: str) -> ConverseResponse:
         mindmap_plaintext=mindmaps[-1] if mindmaps else None,
         sources=sources_calls[-1] if sources_calls else [],
         recall=[s["topic"] for s in new_seedlings],
+        awaiting_topic_confirm=after.get("awaiting_topic_confirm", False),
+        topics=after.get("pending", []) if after.get("awaiting_topic_confirm") else [],
     )
 
 
