@@ -240,60 +240,6 @@ async function loadCorpus() {
   }
 }
 
-// 브랜드 마크가 실제 완료한 인출 세션 수(=저장된 데일리노트 개수)를 반영해 자란다 —
-// 지어낸 스트릭/포인트가 아니라 이미 저장된 문서 수를 그대로 세는 것뿐.
-const railMark = document.getElementById("rail-mark");
-const railMarkSvg = document.getElementById("rail-mark-svg");
-
-const PLANT_STAGES = [
-  { name: "씨앗", min: 0, svg: `
-    <circle class="rail-mark-leaf" cx="24" cy="54" r="4" />
-    <path class="rail-mark-stem" d="M14 60 Q24 56 34 60" />
-  ` },
-  { name: "새싹", min: 1, svg: `
-    <path class="rail-mark-leaf" d="M24 36 C 12 36, 6 26, 8 13 C 19 15, 25 24, 24 36 Z" />
-    <path class="rail-mark-leaf" d="M24 28 C 36 28, 42 19, 40 8 C 30 10, 24 17, 24 28 Z" />
-    <path class="rail-mark-stem" d="M24 58 L24 21" />
-  ` },
-  { name: "묘목", min: 3, svg: `
-    <g transform="translate(24,58) scale(1.1) translate(-24,-58)">
-      <path class="rail-mark-leaf" d="M24 36 C 12 36, 6 26, 8 13 C 19 15, 25 24, 24 36 Z" />
-      <path class="rail-mark-leaf" d="M24 28 C 36 28, 42 19, 40 8 C 30 10, 24 17, 24 28 Z" />
-    </g>
-    <path class="rail-mark-stem rail-mark-stem-thick" d="M24 58 L24 19" />
-  ` },
-  { name: "나무", min: 7, svg: `
-    <path class="rail-mark-canopy" d="M24 34 C 8 34, 4 18, 14 8 C 20 2, 30 2, 36 9 C 44 18, 40 34, 24 34 Z" />
-    <path class="rail-mark-trunk" d="M24 58 L24 34" />
-  ` },
-];
-
-function plantStageForCount(count) {
-  let stage = PLANT_STAGES[0];
-  for (const s of PLANT_STAGES) {
-    if (count >= s.min) stage = s;
-  }
-  return stage;
-}
-
-let currentPlantStage = null;
-let dailyNoteCount = 0;
-
-function setPlantStage(count, { animate = false } = {}) {
-  const stage = plantStageForCount(count);
-  if (stage === currentPlantStage) return;
-  currentPlantStage = stage;
-
-  railMarkSvg.innerHTML = stage.svg;
-  railMark.title = `${stage.name} · 완료한 인출 세션 ${count}회`;
-
-  if (animate) {
-    railMarkSvg.classList.remove("is-growing");
-    void railMarkSvg.offsetWidth; // restart the animation even if the class never left
-    railMarkSvg.classList.add("is-growing");
-  }
-}
-
 const railTabs = Array.from(document.querySelectorAll(".rail-tab"));
 const tabDocuments = document.getElementById("tab-documents");
 const railIndicator = document.getElementById("rail-indicator");
@@ -435,6 +381,16 @@ const docChatThread = document.getElementById("doc-chat-thread");
 const docChatForm = document.getElementById("doc-chat-form");
 const docChatInput = document.getElementById("doc-chat-input");
 let currentDocId = null;
+// 문서를 넘겨봐도 접힘 상태가 유지되도록 모듈 스코프에 둔다 — aside 자체는 문서마다
+// 다시 그려지므로(docReaderBody.innerHTML), 매번 이 상태를 다시 적용해준다.
+let readerAsideCollapsed = false;
+
+function applyReaderAsideState(root) {
+  const layout = root.querySelector(".doc-reader-layout");
+  const toggle = root.querySelector("#reader-aside-toggle");
+  layout.classList.toggle("is-aside-collapsed", readerAsideCollapsed);
+  toggle.setAttribute("aria-expanded", String(!readerAsideCollapsed));
+}
 
 function appendDocChatPending() {
   const bubble = document.createElement("div");
@@ -457,32 +413,22 @@ function appendDocChatBubble(role, text) {
   docChatThread.scrollTop = docChatThread.scrollHeight;
 }
 
-let docFlyoutPinned = false;
-let docFlyoutPeeking = false;
+// 클릭으로만 열고 닫는다 — 이전엔 호버로도 잠깐 열리는 "peek" 상태가 겹쳐 있어서
+// 클릭 토글 기대와 어긋났다. 상태를 하나로 단순화.
+let docFlyoutOpen = false;
 
 function syncDocFlyout() {
-  docFlyout.classList.toggle("is-open", docFlyoutPinned || docFlyoutPeeking);
-  tabDocuments.classList.toggle("is-pinned", docFlyoutPinned);
+  docFlyout.classList.toggle("is-open", docFlyoutOpen);
+  tabDocuments.classList.toggle("is-pinned", docFlyoutOpen);
 }
 
 function closeDocFlyout() {
-  docFlyoutPinned = false;
-  docFlyoutPeeking = false;
+  docFlyoutOpen = false;
   syncDocFlyout();
 }
-
-function peekDocFlyout(open) {
-  docFlyoutPeeking = open;
-  syncDocFlyout();
-}
-
-tabDocuments.addEventListener("mouseenter", () => peekDocFlyout(true));
-tabDocuments.addEventListener("mouseleave", () => peekDocFlyout(false));
-docFlyout.addEventListener("mouseenter", () => peekDocFlyout(true));
-docFlyout.addEventListener("mouseleave", () => peekDocFlyout(false));
 
 tabDocuments.addEventListener("click", () => {
-  docFlyoutPinned = !docFlyoutPinned;
+  docFlyoutOpen = !docFlyoutOpen;
   syncDocFlyout();
 });
 
@@ -876,6 +822,14 @@ async function openDocument(docId, scrollQuery) {
               <p class="doc-reader-eyebrow"></p>
               <h2 class="doc-reader-title"></h2>
             </div>
+            <button type="button" class="reader-aside-toggle" id="reader-aside-toggle" aria-expanded="true"
+              title="문서 정보·목차·채팅 패널 접기/펼치기">
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+                <rect x="2.5" y="4" width="15" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" />
+                <rect x="12.5" y="4" width="5" height="12" fill="currentColor" />
+              </svg>
+              <span class="sr-only">패널 접기/펼치기</span>
+            </button>
             <button type="button" class="doc-chat-open-trigger" id="doc-chat-open-trigger">💬 질문</button>
           </header>
           <div class="agent-text doc-reader-content"></div>
@@ -930,6 +884,12 @@ async function openDocument(docId, scrollQuery) {
     docReaderBody.querySelector("#doc-chat-open-trigger").addEventListener("click", () => {
       activateReaderTab("chat");
       docChatInput.focus();
+    });
+
+    applyReaderAsideState(docReaderBody);
+    docReaderBody.querySelector("#reader-aside-toggle").addEventListener("click", () => {
+      readerAsideCollapsed = !readerAsideCollapsed;
+      applyReaderAsideState(docReaderBody);
     });
     // force a reflow so removing+re-adding the class restarts the animation
     docReaderBody.classList.remove("is-entering");
@@ -1202,17 +1162,10 @@ function addAgentTurn(data) {
   }
   const filedDocs = data.saved_documents || [];
   const hasFiled = filedDocs.length > 0;
-  const newDailyNotes = filedDocs.filter((d) => d.type === "dailynote").length;
-  if (newDailyNotes > 0) {
-    dailyNoteCount += newDailyNotes;
-    setPlantStage(dailyNoteCount, { animate: true });
-  }
   if (hasFiled) {
     documentsPromise = null; // 방금 저장된 게 목록/최근 활동에 반영되도록 강제 재조회
     ensureDocumentsLoaded()
       .then((docs) => {
-        dailyNoteCount = docs.filter((d) => d.doc_type === "dailynote").length;
-        setPlantStage(dailyNoteCount);
         renderHomeSidebar(docs);
       })
       .catch(() => {});
@@ -1424,8 +1377,6 @@ loadCorpus();
 
 ensureDocumentsLoaded()
   .then((docs) => {
-    dailyNoteCount = docs.filter((d) => d.doc_type === "dailynote").length;
-    setPlantStage(dailyNoteCount);
     renderHomeSidebar(docs);
   })
   .catch(() => {});
@@ -1436,7 +1387,7 @@ if (initialPanel === "docs" || initialPanel === "documents") {
   if (initialDocId) {
     ensureDocumentsLoaded().then(() => openDocument(initialDocId));
   } else {
-    docFlyoutPinned = true;
+    docFlyoutOpen = true;
     syncDocFlyout();
   }
 } else {

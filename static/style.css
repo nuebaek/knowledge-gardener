@@ -30,9 +30,48 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
+  /* 타이포 — 세 토큰이 같은 패밀리인 건 의도된 것이다.
+     JetBrains Mono를 쓰다가 한글 글리프가 없어 섞인 문장에서 폴백이 깨져 되돌린 이력이 있다
+     (기획서 §8.5). 역할 구분은 폰트가 아니라 아래 자간·굵기 토큰으로 만든다. */
   --display: "Pretendard", -apple-system, "Segoe UI", sans-serif;
   --sans: "Pretendard", -apple-system, "Segoe UI", sans-serif;
   --mono: "Pretendard", -apple-system, "Segoe UI", sans-serif;
+
+  /* spacing — 4px 기반 8단계. 새 값을 만들지 말고 이 중에서 고를 것 */
+  --s1: 0.25rem;   /*  4px — 칩/아이콘 내부 미세 간격 */
+  --s2: 0.5rem;    /*  8px — 인접 요소 */
+  --s3: 0.75rem;   /* 12px — 컴포넌트 내부 패딩 */
+  --s4: 1rem;      /* 16px — 카드 패딩 */
+  --s5: 1.25rem;   /* 20px — 넉넉한 카드 패딩 */
+  --s6: 1.5rem;    /* 24px — 섹션 간격 */
+  --s7: 2rem;      /* 32px — 큰 섹션 분리 */
+  --s8: 3rem;      /* 48px — 페이지 여백 */
+
+  /* type — 크기는 역할 이름으로 부른다. 리터럴 rem을 새로 쓰지 말 것.
+     (아이콘 글리프 크기는 텍스트가 아니므로 이 스케일 밖이다) */
+  --text-micro: 0.625rem;  /* 10px — 태그/칩 전용 최소 단계.
+                              본문에는 쓰지 말 것: 이 크기는 가독성 하한에 가깝다 */
+  --text-meta: 0.6875rem;  /* 11px — 타임스탬프·건수·라벨 */
+  --text-caption: 0.75rem; /* 12px — 보조 설명 */
+  --text-sm: 0.8125rem;    /* 13px — 사이드바 본문 */
+  --text-body: 0.875rem;   /* 14px — 기본 본문 */
+  --text-md: 0.9375rem;    /* 15px — 강조 본문 */
+  --text-base: 1rem;       /* 16px — 리더 본문 기준 */
+  --text-lg: 1.0625rem;    /* 17px */
+  --text-xl: 1.1875rem;    /* 19px */
+  --text-2xl: 1.375rem;    /* 22px */
+  --text-hero: 2rem;       /* 32px — 패널 히어로 타이틀. 원래 24px, 한 번 40px까지 키웠다가
+                               너무 크다는 피드백을 받고 중간값으로 정착 */
+
+  /* 자간 — 크기에 따라 달라야 한다. 큰 글자는 좁히고, 작은 메타는 넓힌다 */
+  --tracking-tight: -0.02em;
+  --tracking-snug: -0.01em;
+  --tracking-meta: 0.04em;
+
+  --leading-tight: 1.3;
+  --leading-snug: 1.45;
+  --leading-body: 1.6;
+  --leading-relaxed: 1.75;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -123,6 +162,10 @@ body {
   border: 0;
 }
 
+
+/* ------------------------------------------------------------------
+   APP SHELL · 레일(좌측 아이콘 바)
+   ------------------------------------------------------------------ */
 .app {
   position: relative;
   height: 100%;
@@ -137,61 +180,9 @@ body {
   align-items: center;
   padding: 1rem 0 0.875rem;
   border-right: 1px solid var(--rule);
-  background: var(--bg-raised);
-}
-
-.rail-mark {
-  flex: none;
-  margin-bottom: 1.75rem;
-}
-
-.rail-mark-sprout {
-  display: block;
-  overflow: visible;
-  transform-origin: 50% 100%;
-  animation: breathe 2.4s ease-in-out infinite;
-}
-
-.rail-mark-leaf {
-  fill: var(--moss);
-}
-
-.rail-mark-stem {
-  fill: none;
-  stroke: var(--moss);
-  stroke-width: 3;
-  stroke-linecap: round;
-}
-
-.rail-mark-trunk {
-  fill: none;
-  stroke: var(--moss);
-  stroke-width: 5;
-  stroke-linecap: round;
-}
-
-.rail-mark-stem-thick {
-  stroke-width: 4;
-}
-
-.rail-mark-canopy {
-  fill: var(--moss);
-}
-
-.rail-mark-sprout.is-growing {
-  animation: plant-grow 0.5s var(--ease-spring) both;
-}
-
-@keyframes plant-grow {
-  0% { transform: scale(0.75); opacity: 0.6; }
-  60% { transform: scale(1.12); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rail-mark-sprout.is-growing {
-    animation: none;
-  }
+  /* --bg-raised-2는 이미 존재하는 살짝 초록빛 도는 톤(문서 카드 hover 등에 씀) —
+     새 색을 만드는 대신 재사용해서 레일 전체에 "정원" 느낌을 깔았다 */
+  background: var(--bg-raised-2);
 }
 
 .rail-tabs {
@@ -252,8 +243,8 @@ body {
   transform: translate(-4px, -50%);
   white-space: nowrap;
   font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.04em;
+  font-size: var(--text-meta);
+  letter-spacing: var(--tracking-meta);
   color: var(--bg);
   background: var(--ink);
   padding: 0.3rem 0.55rem;
@@ -304,13 +295,17 @@ body {
   width: 3.75rem;
   text-align: center;
   font-family: var(--mono);
-  font-size: 0.625rem;
+  font-size: var(--text-micro);
   line-height: 1.5;
   letter-spacing: 0.02em;
   color: var(--ink-mute);
   text-wrap: balance;
 }
 
+
+/* ------------------------------------------------------------------
+   PANEL · 화면 레이아웃 골격
+   ------------------------------------------------------------------ */
 .panel {
   flex: 1;
   min-width: 0;
@@ -323,7 +318,7 @@ body {
 
 .panel-head {
   flex: none;
-  padding: 1.25rem clamp(1.25rem, 4vw, 2.5rem) 1rem;
+  padding: var(--s6) clamp(1.25rem, 4vw, 2.5rem) var(--s5);
   border-bottom: 1px solid var(--rule);
   display: flex;
   align-items: baseline;
@@ -346,47 +341,57 @@ body {
   min-height: 0;
 }
 
+
+/* ------------------------------------------------------------------
+   HOME 사이드바 · 최근 활동 / 🌱 복습 대기 / 안내
+   ------------------------------------------------------------------ */
 .chat-aside {
   flex: none;
   width: 23rem;
-  padding: 1.5rem 1.25rem;
+  padding: var(--s6) var(--s5);
   overflow-y: auto;
   border-left: 1px solid var(--rule);
   display: flex;
   flex-direction: column;
-  gap: 1.75rem;
+  gap: var(--s6);
 }
 
 .chat-aside-title {
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--s3);
   font-family: var(--display);
   font-weight: 700;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-snug);
   color: var(--ink);
 }
 
+/* "오늘 N건 저장"이 붙는 섹션만 제목 아래를 좁힌다 — 예전의 음수 margin 핸들링을 대체 */
+.chat-aside-section:has(.chat-aside-today:not([hidden])) .chat-aside-title {
+  margin-bottom: var(--s1);
+}
+
 .chat-aside-today {
-  margin: -0.4rem 0 0.75rem;
-  font-size: 0.75rem;
+  margin: 0 0 var(--s3);
+  font-size: var(--text-caption);
   color: var(--ink-mute);
 }
 
+/* 구분선이 간격을 대신하므로 gap 없음 — 문서 목록(.doc-card)과 같은 에디토리얼 리스트 규칙 */
 .chat-aside-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
 }
 
 .chat-aside-guide {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--s2);
 }
 
 .chat-aside-guide p {
   margin: 0;
-  font-size: 0.8125rem;
-  line-height: 1.5;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
   color: var(--ink-dim);
 }
 
@@ -394,24 +399,35 @@ body {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 0.6rem 0.7rem;
-  background: var(--bg-raised);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-control);
+  padding: var(--s2) var(--s1);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  border-left: 2px solid transparent;
   cursor: pointer;
-  transition: border-color 0.15s var(--ease-out), background 0.15s var(--ease-out);
+  transition: background 0.15s var(--ease-out), border-color 0.15s var(--ease-out);
+}
+
+.chat-aside-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 .chat-aside-item:hover {
-  border-color: var(--moss);
   background: var(--bg-inset);
+  border-left-color: var(--moss);
+}
+
+.chat-aside-item:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
 }
 
 .chat-aside-item-title {
   display: block;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   color: var(--ink-dim);
-  line-height: 1.4;
+  line-height: var(--leading-snug);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -419,10 +435,23 @@ body {
 
 .chat-aside-item-meta {
   display: block;
-  margin-top: 0.15rem;
+  margin-top: var(--s1);
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
+  letter-spacing: var(--tracking-meta);
   color: var(--ink-faint);
+}
+
+/* 복습 대기 목록도 노트 본문의 🌱과 같은 표기를 쓴다 — 화면이 달라도 미해결의 생김새는 하나 */
+#chat-aside-seedling-section .chat-aside-item {
+  border-left-style: dashed;
+  border-left-color: var(--amber);
+  padding-left: var(--s2);
+}
+
+#chat-aside-seedling-section .chat-aside-item:hover {
+  background: var(--amber-soft);
+  border-left-color: var(--amber);
 }
 
 @media (max-width: 64rem) {
@@ -431,34 +460,33 @@ body {
   }
 }
 
+
+/* ------------------------------------------------------------------
+   PANEL 헤더 · 제목과 새 채팅
+   ------------------------------------------------------------------ */
 .panel-head-main {
   min-width: 0;
 }
 
+/* 진입 순간 "아, 이거 지식정원사구나" 하고 알아보게 — 24px 제목은 다른 UI 텍스트와
+   구분이 안 됐다. 히어로 크기로 키우고, 좁은 자간으로 큰 글자 특유의 헐렁함을 잡는다. */
 .panel-title {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--s3);
   font-family: var(--display);
-  font-weight: 700;
-  font-size: 1.5rem;
-  letter-spacing: -0.01em;
-  margin: 0 0 0.3rem;
+  font-weight: 800;
+  font-size: var(--text-hero);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  margin: 0 0 var(--s2);
   color: var(--ink);
   text-wrap: balance;
 }
 
-.title-dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--moss);
-}
-
 .panel-sub {
-  font-size: 0.8125rem;
-  line-height: 1.5;
+  font-size: var(--text-md);
+  line-height: var(--leading-snug);
   color: var(--ink-faint);
   margin: 0;
   max-width: 34rem;
@@ -469,7 +497,7 @@ body {
   flex: none;
   text-align: right;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   letter-spacing: 0.03em;
   color: var(--ink-mute);
   line-height: 1.7;
@@ -483,7 +511,7 @@ body {
   gap: 0.35rem;
   min-height: 2.25rem;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   color: var(--ink-faint);
   background: none;
   border: 1px solid var(--rule-strong);
@@ -515,6 +543,10 @@ body {
   outline-offset: 2px;
 }
 
+
+/* ------------------------------------------------------------------
+   CHAT · 빈 상태와 예시 칩
+   ------------------------------------------------------------------ */
 .transcript {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -532,9 +564,30 @@ body {
 }
 
 .empty {
+  position: relative;
   margin: auto 0;
   padding: 2.5rem 0;
   text-align: center;
+}
+
+/* 정원 무드를 색으로 확실히 느끼게 — 히어로 아이콘 뒤에만 은은한 moss glow.
+   본문 텍스트 영역까지 안 번지도록 아이콘 높이 정도로만 좁게 잡았다. */
+.empty::before {
+  content: "";
+  position: absolute;
+  top: -0.5rem;
+  left: 50%;
+  width: 15rem;
+  height: 10rem;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, var(--moss-soft) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.empty > * {
+  position: relative;
+  z-index: 1;
 }
 
 .empty-sprout {
@@ -571,9 +624,11 @@ body {
   }
 }
 
+/* 빈 화면 히어로 아이콘 — 성장 단계 시스템은 되돌리고, 원래 있던 정적 새싹(줄기가
+   그어지고 잎이 펴지는 손맛 있는 진입 애니메이션)을 그대로 복원해 크기만 키웠다. */
 .sprout-mark {
   display: block;
-  margin: 0 auto 1.5rem;
+  margin: 0 auto var(--s4);
   overflow: visible;
 }
 
@@ -628,8 +683,8 @@ body {
 .empty-text {
   font-family: var(--display);
   font-weight: 500;
-  font-size: 1.375rem;
-  letter-spacing: -0.01em;
+  font-size: var(--text-2xl);
+  letter-spacing: var(--tracking-snug);
   color: var(--ink);
   line-height: 1.5;
   margin: 0 0 0.6rem;
@@ -638,7 +693,7 @@ body {
 
 .empty-hint {
   font-family: var(--sans);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   color: var(--ink-faint);
   line-height: 1.5;
   margin: 0 0 1.5rem;
@@ -661,7 +716,7 @@ body {
   align-items: center;
   min-height: 2.25rem;
   font-family: var(--mono);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   color: var(--ink-faint);
   background: var(--bg-raised);
   border: 1px solid var(--rule-strong);
@@ -683,6 +738,10 @@ body {
   transition-duration: 0.05s;
 }
 
+
+/* ------------------------------------------------------------------
+   CHAT · 대화 턴 공통(레일 점, 말풍선)
+   ------------------------------------------------------------------ */
 .turn {
   display: flex;
   gap: 0.75rem;
@@ -706,28 +765,33 @@ body {
   }
 }
 
+/* AI 답변에만 붙는 작은 색상 배지 — moss/amber/rust로 답변 종류를 구분한다(기존 색 체계
+   재사용). 처음엔 안에 🌿 이모지를 넣었는데, 이모지는 배경색을 안 따라가고 자기 고유 색으로
+   렌더링돼서 moss 배경 위의 초록 이모지가 서로 묻혀 안 보이는 문제가 있었다 — 그래서 글리프
+   없이 색만으로 구분한다. 이전에 턴 사이를 잇는 "자라나는 줄기" 레일 장식을 시도했다가 좌우
+   정렬 채팅 구조와 안 맞아 원복한 이력이 있다(기획서 §8.5) — 그래서 턴을 잇는 선(rail-line)은
+   켜지 않고, 턴 하나에 속한 점(rail-dot)만 쓴다. */
 .turn-rail {
-  display: none;
+  flex: none;
+  display: flex;
+  padding-top: 0.4rem;
 }
 
 .rail-dot {
   flex: none;
-  width: 8px;
-  height: 8px;
-  margin-top: 0.45em;
+  width: 0.625rem;
+  height: 0.625rem;
   border-radius: 50%;
-  background: var(--ink-mute);
+  background: var(--bg-inset);
 }
 
+/* 자라나는 줄기 레일은 다시 켜지 않는다 — 기획서 §8.5 참고 */
 .rail-line {
-  flex: 1;
-  width: 2px;
-  min-height: 0.75rem;
-  margin-top: 0.25rem;
-  background: var(--rule);
+  display: none;
 }
 
-.turn:last-child .rail-line {
+/* 사용자 턴은 이미 moss 말풍선 + 우측 정렬로 충분히 구분되므로 배지가 필요 없다 */
+.kind-user .turn-rail {
   display: none;
 }
 
@@ -799,9 +863,11 @@ body {
 
 .kind-user .turn-body {
   margin: 0;
-  font-family: var(--mono);
-  font-size: 0.9375rem;
-  line-height: 1.6;
+  /* 이전엔 --mono였다 — 세 폰트 토큰이 지금은 같은 서체라 안 보이던 실수였지만,
+     사용자가 직접 쓴 자연어를 코드용 서체로 표시하는 건 의미상 맞지 않는다 */
+  font-family: var(--sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
   color: var(--moss-contrast);
   white-space: pre-wrap;
 }
@@ -814,9 +880,13 @@ body {
   box-shadow: var(--shadow-raised);
 }
 
+
+/* ------------------------------------------------------------------
+   CHAT · 마크다운 렌더링 본문
+   ------------------------------------------------------------------ */
 .agent-text {
   font-family: var(--sans);
-  font-size: 1rem;
+  font-size: var(--text-base);
   line-height: 1.7;
   color: var(--ink);
   max-width: 68ch;
@@ -895,7 +965,7 @@ body {
   font-family: var(--display);
   font-weight: 700;
   color: var(--ink);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--tracking-snug);
   text-wrap: balance;
   margin: 1.6em 0 0.6em;
 }
@@ -907,19 +977,19 @@ body {
 }
 
 .agent-text h1 {
-  font-size: 1.375rem;
+  font-size: var(--text-2xl);
 }
 
 .agent-text h2 {
-  font-size: 1.1875rem;
+  font-size: var(--text-xl);
 }
 
 .agent-text h3 {
-  font-size: 1.0625rem;
+  font-size: var(--text-lg);
 }
 
 .agent-text h4 {
-  font-size: 1rem;
+  font-size: var(--text-base);
 }
 
 .agent-text hr {
@@ -938,7 +1008,7 @@ body {
   width: 100%;
   border-collapse: collapse;
   margin: 0 0 1em;
-  font-size: 0.875rem;
+  font-size: var(--text-body);
 }
 
 .agent-text th,
@@ -959,13 +1029,23 @@ body {
   padding: 0.2em 0;
 }
 
+/* ------------------------------------------------------------------
+   🌱 SEEDLING · 제품 시그니처
+
+   "모르는 건 채우지 않고 남긴다"는 원칙이 눈에 보이는 자리다. 그래서 꽉 채운
+   콜아웃 상자가 아니라 '아직 열려 있는 여백'으로 그린다:
+   점선 = 아직 끝나지 않음, 얕은 amber = 미해결.
+   (moss=설명 완료, amber=미해결, rust=오류 — 이미 있는 색 의미 체계를 그대로 따른다)
+   같은 표기를 사이드바 '🌱 최근 복습 대기' 목록에도 적용한다.
+   ------------------------------------------------------------------ */
 .recall-block {
-  margin: 1em 0;
-  padding: 0.6rem 0.85rem;
+  margin: var(--s4) 0;
+  padding: var(--s2) var(--s3);
   background: var(--amber-soft);
-  border-left: 2px solid var(--amber);
+  border-left: 2px dashed var(--amber);
   border-radius: 0 var(--radius-control) var(--radius-control) 0;
-  font-size: 0.875rem;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   color: var(--ink-dim);
 }
 
@@ -981,6 +1061,10 @@ body {
   margin: 0.6rem 0 0;
 }
 
+
+/* ------------------------------------------------------------------
+   CHAT · 출처 칩
+   ------------------------------------------------------------------ */
 .sources {
   display: flex;
   flex-wrap: wrap;
@@ -993,7 +1077,7 @@ body {
   align-items: center;
   gap: 0.35rem;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   color: var(--ink-faint);
   background: var(--bg-inset);
   border: none;
@@ -1030,7 +1114,7 @@ body {
 .turn-label {
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   margin: 0 0 0.5rem;
@@ -1079,22 +1163,22 @@ body {
 .filed-tab .filed-type {
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   color: var(--amber);
   flex: none;
 }
 
 .filed-tab .filed-name {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   color: var(--ink-faint);
   overflow-wrap: anywhere;
 }
 
 .kind-filed .agent-note {
   font-family: var(--sans);
-  font-size: 0.8125rem;
-  line-height: 1.6;
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
   color: var(--ink-dim);
   margin: 0;
   text-wrap: pretty;
@@ -1103,9 +1187,13 @@ body {
 .kind-filed .agent-note-tip {
   margin-top: 0.5rem;
   color: var(--ink-mute);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
 }
 
+
+/* ------------------------------------------------------------------
+   CHAT · 주제 확인 카드(인출 세션 시작)
+   ------------------------------------------------------------------ */
 .kind-topics .turn-content {
   max-width: 30rem;
   padding: 1rem 1.1rem;
@@ -1133,19 +1221,19 @@ body {
   gap: 0.4rem;
   font-family: var(--display);
   font-weight: 700;
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
   color: var(--ink);
 }
 
 .topic-card-count {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   color: var(--ink-mute);
 }
 
 .topic-card-sub {
   margin: -0.35rem 0 0;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
   color: var(--ink-dim);
 }
@@ -1189,13 +1277,13 @@ body {
 }
 
 .topic-row-label {
-  font-size: 0.875rem;
+  font-size: var(--text-body);
   color: var(--ink);
 }
 
 .topic-row-source {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   color: var(--ink-faint);
 }
 
@@ -1210,7 +1298,7 @@ body {
 
 .guide-box p {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   line-height: 1.5;
   color: var(--ink-mute);
 }
@@ -1219,7 +1307,7 @@ body {
   align-self: flex-end;
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   color: var(--moss-contrast);
   background: var(--moss);
   border: none;
@@ -1288,7 +1376,7 @@ body {
 
 .pending-text {
   font-family: var(--mono);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   letter-spacing: 0.02em;
   color: var(--ink-dim);
 }
@@ -1302,7 +1390,7 @@ body {
 
 .error-text {
   font-family: var(--sans);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   line-height: 1.55;
   color: var(--ink-dim);
   margin: 0 0 0.5rem;
@@ -1314,7 +1402,7 @@ body {
   align-items: center;
   min-height: 2.25rem;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   color: var(--rust);
   background: none;
   border: 1px solid rgba(162, 63, 43, 0.4);
@@ -1340,6 +1428,10 @@ body {
   outline-offset: 2px;
 }
 
+
+/* ------------------------------------------------------------------
+   CHAT · 입력창
+   ------------------------------------------------------------------ */
 .composer {
   flex: none;
   padding: 1rem clamp(1.25rem, 4vw, 2.5rem) 1.25rem;
@@ -1375,7 +1467,7 @@ body {
   resize: none;
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
   line-height: 1.5;
   padding: 0.3rem 0;
   max-height: 4.8rem;
@@ -1398,7 +1490,7 @@ body {
   border-radius: 50%;
   color: var(--moss-contrast);
   font-family: var(--mono);
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
   padding: 0.5rem;
   cursor: pointer;
   transition: opacity 0.15s var(--ease-out), transform 0.4s var(--ease-spring);
@@ -1424,6 +1516,10 @@ body {
   outline-offset: 2px;
 }
 
+
+/* ------------------------------------------------------------------
+   문서함 · 필터와 목록
+   ------------------------------------------------------------------ */
 .doc-filter-row {
   flex: none;
   display: flex;
@@ -1454,7 +1550,7 @@ body {
   align-items: center;
   gap: 0.4rem;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   color: var(--bg);
   background: var(--moss);
   border: 1px solid var(--moss);
@@ -1491,7 +1587,7 @@ body {
 }
 
 .tag-filter-clear {
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
   line-height: 1;
 }
 
@@ -1499,7 +1595,7 @@ body {
   flex: none;
   white-space: nowrap;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--ink-faint);
   background: none;
@@ -1525,10 +1621,11 @@ body {
   outline-offset: 2px;
 }
 
+/* 선택 상태는 색과 배경으로 충분하다 — 탭은 떠 있는 레이어가 아니므로 그림자를 걷어냈다 */
 .folder-tab[aria-selected="true"] {
   color: var(--moss);
-  background: var(--bg-raised);
-  box-shadow: var(--shadow-raised);
+  background: var(--moss-soft);
+  font-weight: 700;
 }
 
 .doc-layout {
@@ -1574,9 +1671,9 @@ body {
 }
 
 .doc-list-status {
-  margin: 2rem 0.5rem;
+  margin: var(--s7) 0.5rem;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   color: var(--ink-mute);
   text-align: center;
 }
@@ -1644,6 +1741,10 @@ body {
   height: 1rem;
 }
 
+
+/* ------------------------------------------------------------------
+   문서함 · 목록 항목(에디토리얼 리스트)
+   ------------------------------------------------------------------ */
 .doc-card {
   display: block;
   width: 100%;
@@ -1687,7 +1788,7 @@ body {
 .doc-card-title {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: var(--text-body);
   color: var(--ink);
   margin: 0;
   text-wrap: pretty;
@@ -1699,7 +1800,7 @@ body {
 
 .doc-card-excerpt {
   font-family: var(--sans);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   line-height: 1.5;
   color: var(--ink-faint);
   margin: 0.25rem 0 0;
@@ -1712,7 +1813,7 @@ body {
 .doc-card-meta {
   flex: none;
   font-family: var(--mono);
-  font-size: 0.625rem;
+  font-size: var(--text-micro);
   letter-spacing: 0.03em;
   color: var(--ink-mute);
 }
@@ -1740,7 +1841,7 @@ body {
   align-items: center;
   gap: 0.3rem;
   font-family: var(--mono);
-  font-size: 0.625rem;
+  font-size: var(--text-micro);
   color: var(--moss);
   background: var(--moss-soft);
   border: 1px solid var(--moss);
@@ -1781,7 +1882,7 @@ body {
   border: none;
   background: none;
   color: inherit;
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -1799,13 +1900,17 @@ body {
   border-radius: 2px;
 }
 
+
+/* ------------------------------------------------------------------
+   문서함 · 리더 본문
+   ------------------------------------------------------------------ */
 .doc-reader {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--bg-raised-2);
-  padding: clamp(1.5rem, 4vw, 3rem);
+  padding: clamp(1.5rem, 4vw, var(--s8));
 }
 
 .doc-reader-empty {
@@ -1815,15 +1920,15 @@ body {
 }
 
 .doc-reader-empty .empty-text {
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
 }
 
 .doc-reader-status {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   color: var(--ink-mute);
   text-align: center;
-  margin-top: 3rem;
+  margin-top: var(--s8);
 }
 
 .doc-reader-body {
@@ -1836,6 +1941,18 @@ body {
   grid-template-columns: minmax(0, 1fr) 24rem;
   gap: 2.5rem;
   align-items: start;
+  transition: grid-template-columns 0.2s var(--ease-out);
+}
+
+/* 문서정보/목차/채팅을 통째로 접어 본문 폭을 넓힌다 — 상태는 문서를 넘겨도 유지된다
+   (app.js의 readerAsideCollapsed, 문서마다 aside가 다시 그려질 때 재적용) */
+.doc-reader-layout.is-aside-collapsed {
+  grid-template-columns: minmax(0, 1fr) 0;
+  gap: 0;
+}
+
+.doc-reader-layout.is-aside-collapsed .doc-reader-aside {
+  display: none;
 }
 
 .doc-reader-main {
@@ -1853,9 +1970,14 @@ body {
   height: calc(100vh - 9.5rem);
 }
 
+/* 정적 컨테이너는 헤어라인만 쓴다 — 그림자는 실제로 떠 있는 것(말풍선/플라이아웃/툴팁) 전용 */
+
+/* ------------------------------------------------------------------
+   문서함 · 리더 사이드바 카드 / 목차·채팅 탭
+   ------------------------------------------------------------------ */
 .reader-info-card,
 .chat-aside-section {
-  padding: 0.9rem 1rem;
+  padding: var(--s4);
   background: var(--bg-raised);
   border: 1px solid var(--rule);
   border-radius: var(--radius-card);
@@ -1865,7 +1987,7 @@ body {
   margin: 0 0 0.6rem;
   font-family: var(--display);
   font-weight: 700;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   color: var(--ink);
 }
 
@@ -1886,13 +2008,13 @@ body {
 .reader-info-row dt {
   margin: 0;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   color: var(--ink-mute);
 }
 
 .reader-info-row dd {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   color: var(--ink-dim);
   text-align: right;
 }
@@ -1925,7 +2047,7 @@ body {
   border: none;
   background: none;
   padding: 0.3rem 0 0.3rem calc(var(--depth, 0) * 0.75rem);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   line-height: 1.4;
   color: var(--ink-mute);
   cursor: pointer;
@@ -1954,8 +2076,8 @@ body {
 
 .doc-reader-eyebrow {
   font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.04em;
+  font-size: var(--text-meta);
+  letter-spacing: var(--tracking-meta);
   color: var(--ink-mute);
   margin: 0 0 0.5rem;
 }
@@ -1963,8 +2085,8 @@ body {
 .doc-reader-title {
   font-family: var(--display);
   font-weight: 700;
-  font-size: 1.375rem;
-  letter-spacing: -0.02em;
+  font-size: var(--text-2xl);
+  letter-spacing: var(--tracking-tight);
   color: var(--ink);
   margin: 0;
   text-wrap: balance;
@@ -1993,7 +2115,7 @@ body {
   display: inline-flex;
   align-items: center;
   font-family: var(--mono);
-  font-size: 0.625rem;
+  font-size: var(--text-micro);
   color: var(--ink-faint);
   background: none;
   border: 1px dashed var(--rule-strong);
@@ -2021,7 +2143,7 @@ body {
 
 .tag-add-input {
   font-family: var(--mono);
-  font-size: 0.625rem;
+  font-size: var(--text-micro);
   width: 7rem;
   padding: 0.1rem 0.5rem;
   border: 1px solid var(--moss);
@@ -2037,8 +2159,8 @@ body {
 }
 
 .doc-reader-content {
-  font-size: 1rem;
-  line-height: 1.75;
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
   max-width: 68ch;
 }
 
@@ -2061,7 +2183,7 @@ body {
 
 .note-meta-label {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   color: var(--ink-mute);
   margin-right: 0.2rem;
 }
@@ -2069,7 +2191,7 @@ body {
 .note-meta-chip {
   display: inline-flex;
   font-family: var(--mono);
-  font-size: 0.625rem;
+  font-size: var(--text-micro);
   color: var(--ink-dim);
   background: var(--bg-raised);
   border: 1px solid var(--rule-strong);
@@ -2088,7 +2210,7 @@ body {
 }
 
 .note-meta-action-text {
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   color: var(--ink-dim);
   white-space: pre-wrap;
 }
@@ -2144,7 +2266,7 @@ body {
   flex: none;
   font-family: var(--mono);
   color: var(--ink-mute);
-  font-size: 1rem;
+  font-size: var(--text-base);
 }
 
 .doc-search-bar input {
@@ -2155,7 +2277,7 @@ body {
   outline: none;
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 0.875rem;
+  font-size: var(--text-body);
 }
 
 .doc-search-bar input::placeholder {
@@ -2196,7 +2318,7 @@ body {
 .doc-search-hit-title {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: var(--text-body);
   color: var(--ink);
   margin: 0 0 0.15rem;
   text-wrap: pretty;
@@ -2204,8 +2326,8 @@ body {
 
 .doc-search-hit-section {
   font-family: var(--mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.04em;
+  font-size: var(--text-micro);
+  letter-spacing: var(--tracking-meta);
   text-transform: uppercase;
   color: var(--ink-mute);
   margin: 0 0 0.35rem;
@@ -2213,7 +2335,7 @@ body {
 
 .doc-search-hit-snippet {
   font-family: var(--sans);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   line-height: 1.5;
   color: var(--ink-faint);
   margin: 0;
@@ -2234,7 +2356,6 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .turn,
   .rail-dot,
-  .rail-mark-sprout,
   .empty-sprout,
   .skeleton-line,
   .sprout-stem,
@@ -2261,7 +2382,7 @@ body {
     opacity: 1;
     transform: none;
   }
-  .rail-mark-sprout,
+  .sprout-mark,
   .empty-sprout {
     opacity: 1;
     transform: none;
@@ -2288,10 +2409,6 @@ body {
     padding: 0.5rem 0.75rem;
     border-right: none;
     border-bottom: 1px solid var(--rule);
-  }
-
-  .rail-mark {
-    display: none;
   }
 
   .rail-tabs {
@@ -2358,7 +2475,7 @@ body {
   }
 
   .empty-text {
-    font-size: 1.1875rem;
+    font-size: var(--text-xl);
     max-width: 21rem;
     margin-left: auto;
     margin-right: auto;
@@ -2402,6 +2519,38 @@ body {
   min-width: 0;
 }
 
+/* 눈에 띄기보다 배경에 스며있다가, 호버할 때만 존재감이 드러나는 쪽으로 —
+   문서정보/목차/채팅을 접었다 폈다 하는 보조 컨트롤이라 주 액션(💬 질문)보다 조용해야 한다 */
+.reader-aside-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
+}
+
+.reader-aside-toggle:hover {
+  background: var(--bg-inset);
+  color: var(--ink-dim);
+}
+
+.reader-aside-toggle[aria-expanded="false"] {
+  color: var(--moss);
+  background: var(--moss-soft);
+}
+
+.reader-aside-toggle:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
 .doc-chat-open-trigger {
   flex: none;
   border: 1px solid var(--rule-strong);
@@ -2410,7 +2559,7 @@ body {
   color: var(--ink-dim);
   cursor: pointer;
   font-family: var(--sans);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   padding: 0.4rem 0.75rem;
 }
 
@@ -2435,7 +2584,7 @@ body {
   border-bottom: 2px solid transparent;
   background: none;
   font-family: var(--sans);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--ink-mute);
   cursor: pointer;
@@ -2480,7 +2629,7 @@ body {
   background: none;
   color: var(--ink-mute);
   font-family: var(--sans);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   cursor: pointer;
   padding: 0.25rem 0.4rem;
   border-radius: var(--radius-card);
@@ -2495,7 +2644,7 @@ body {
 .doc-chat-hint {
   flex: none;
   margin: 0 0 0.6rem;
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   color: var(--ink-mute);
 }
 
@@ -2512,7 +2661,7 @@ body {
 .doc-chat-bubble {
   max-width: 85%;
   padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
+  font-size: var(--text-body);
   line-height: 1.5;
 }
 
@@ -2537,24 +2686,24 @@ body {
   font-family: var(--display);
   font-weight: 700;
   color: inherit;
-  letter-spacing: -0.01em;
-  line-height: 1.3;
+  letter-spacing: var(--tracking-snug);
+  line-height: var(--leading-tight);
   margin: 0.8em 0 0.3em;
 }
 
 .doc-chat-bubble h1 {
-  font-size: 1rem;
+  font-size: var(--text-base);
 }
 
 .doc-chat-bubble h2 {
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
 }
 
 .doc-chat-bubble h3,
 .doc-chat-bubble h4,
 .doc-chat-bubble h5,
 .doc-chat-bubble h6 {
-  font-size: 0.875rem;
+  font-size: var(--text-body);
 }
 
 .doc-chat-bubble-user {
@@ -2603,7 +2752,7 @@ body {
   outline: none;
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 0.875rem;
+  font-size: var(--text-body);
 }
 
 .doc-chat-input::placeholder {
