@@ -295,5 +295,5 @@ def write_tilnote(
     response = default_llm().invoke(messages)
 
     slug = slugify(what)
-    title = what if len(what) <= 60 else f"{what[:60]}…"
+    title = keywords[0] if keywords else (what if len(what) <= 60 else f"{what[:60]}…")
     return save_docs("til", f"{today}-{slug}", entry, response.content, title=title)

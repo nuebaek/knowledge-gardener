@@ -47,6 +47,19 @@ def test_remove_tag_cleans_up_orphan(catalog_db):
     assert catalog.all_tags() == []
 
 
+def test_writer_title_til_uses_first_keyword(catalog_db):
+    path = _write(
+        catalog_db, "til/2026-08-06-x.md",
+        "---\nkeywords:\n- nginx\n- HTTPS\nwhat: 개인 도메인 설정 및 연결 작업을 수행했습니다.\n---\nbody",
+    )
+    assert catalog._writer_title(path, "til") == "nginx"
+
+
+def test_writer_title_til_falls_back_to_what_without_keywords(catalog_db):
+    path = _write(catalog_db, "til/2026-08-06-y.md", "---\nwhat: 작업 수행\n---\nbody")
+    assert catalog._writer_title(path, "til") == "작업 수행"
+
+
 def test_list_documents_filters_by_doc_type_and_tag(catalog_db):
     a = _write(catalog_db, "a.md", "a")
     b = _write(catalog_db, "b.md", "b")
