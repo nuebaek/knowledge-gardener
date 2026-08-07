@@ -161,7 +161,9 @@ def make_tools(llm=None, qa_graph=None):
             troubleshooting: The problem encountered and how it was resolved. Empty string if none mentioned.
             reflection: The user's reflection, as stated. Do not expand it beyond light polishing.
             actionplan: The next action, as stated by the user. Empty string if none mentioned.
-            keywords: Short keywords, only from terms the user actually used, as a list of strings.
+            keywords: Short keywords, only from terms the user actually used, as a list of strings —
+                ordered from most to least representative of the whole entry, since the first one
+                is used as the saved document's title.
         """
         if isinstance(keywords, str):
             keywords = [c.strip() for c in keywords.split(",") if c.strip()]

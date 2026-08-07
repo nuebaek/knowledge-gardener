@@ -10,7 +10,7 @@ from app.core.paths import LIBRARY_DB, PROCESSED_DIR, PROJECT_ROOT, WRITER_DIR
 
 BASE_DIR = PROJECT_ROOT
 DB_PATH = LIBRARY_DB
-_WRITER_TITLE_KEY = {"dailynote": "topic", "til": "what"}
+_WRITER_TITLE_KEY = {"dailynote": "topic"}
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
@@ -216,6 +216,12 @@ def _writer_title(path: Path, doc_type: str) -> str:
     if doc_type == "weeklynote":
         topics = meta.get("topics") or []
         return f"{meta.get('date', path.stem)} 주간노트" + (f" · {topics[0]}" if topics else "")
+    if doc_type == "til":
+        keywords = meta.get("keywords") or []
+        if keywords:
+            return keywords[0]
+        what = str(meta.get("what", path.stem))
+        return what if len(what) <= 60 else f"{what[:60]}…"
     key = _WRITER_TITLE_KEY.get(doc_type)
     value = str(meta.get(key, path.stem)) if key else path.stem
     return value if len(value) <= 60 else f"{value[:60]}…"
