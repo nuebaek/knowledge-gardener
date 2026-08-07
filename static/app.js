@@ -183,6 +183,15 @@ function renderReaderToc(nav, contentEl) {
   return true;
 }
 
+// 레일 탭과 같은 아이콘 세트 — 문서 안의 질문 진입점도 같은 글리프를 쓴다(이모지 혼용 방지)
+const ICON_CHAT = `<svg class="ui-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+  <path d="M3.5 5.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H8l-3 3v-3h-.5a2 2 0 0 1-2-2v-6Z"
+    stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+</svg>`;
+const ICON_TOC = `<svg class="ui-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+  <path d="M4 5.5h12M4 10h12M4 14.5h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+</svg>`;
+
 // 목차가 길어도 채팅이 밀려 내려가지 않도록, 목차/채팅을 같은 자리에서 전환하는 탭으로 묶는다.
 function wireReaderPanelTabs(root, hasToc) {
   const tocTabBtn = root.querySelector("#reader-tab-toc");
@@ -262,15 +271,24 @@ function activatePanel(name) {
   history.replaceState(null, "", name === "chat" ? "#" : "#docs");
 }
 
+// 레일 탭이 문서 서랍의 스위치도 겸한다: 문서로 들어가면 열리고, 채팅으로 나오면 닫히고,
+// 이미 켜져 있는 탭을 다시 누르면 토글된다. (서랍만 따로 닫으러 문서 탭에 되돌아갈 일이 없도록)
+function selectPanel(tab) {
+  const name = tab.dataset.panel;
+  const wasActive = tab.getAttribute("aria-selected") === "true";
+  activatePanel(name);
+  setDocFlyoutOpen(wasActive ? !docFlyoutOpen : name === "documents");
+}
+
 railTabs.forEach((tab, i) => {
-  tab.addEventListener("click", () => activatePanel(tab.dataset.panel));
+  tab.addEventListener("click", () => selectPanel(tab));
   tab.addEventListener("keydown", (e) => {
     if (!["ArrowDown", "ArrowUp"].includes(e.key)) return;
     e.preventDefault();
     const dir = e.key === "ArrowDown" ? 1 : -1;
     const next = railTabs[(i + dir + railTabs.length) % railTabs.length];
     next.focus();
-    activatePanel(next.dataset.panel);
+    selectPanel(next);
   });
 });
 
@@ -422,15 +440,14 @@ function syncDocFlyout() {
   tabDocuments.classList.toggle("is-pinned", docFlyoutOpen);
 }
 
-function closeDocFlyout() {
-  docFlyoutOpen = false;
+function setDocFlyoutOpen(open) {
+  docFlyoutOpen = open;
   syncDocFlyout();
 }
 
-tabDocuments.addEventListener("click", () => {
-  docFlyoutOpen = !docFlyoutOpen;
-  syncDocFlyout();
-});
+function closeDocFlyout() {
+  setDocFlyoutOpen(false);
+}
 
 // same document, fresh context — history/thread only, no navigation
 docChatReset.addEventListener("click", () => {
@@ -830,7 +847,7 @@ async function openDocument(docId, scrollQuery) {
               </svg>
               <span class="sr-only">패널 접기/펼치기</span>
             </button>
-            <button type="button" class="doc-chat-open-trigger" id="doc-chat-open-trigger">💬 질문</button>
+            <button type="button" class="doc-chat-open-trigger" id="doc-chat-open-trigger">${ICON_CHAT}이 문서에 질문</button>
           </header>
           <div class="agent-text doc-reader-content"></div>
         </article>
@@ -852,8 +869,8 @@ async function openDocument(docId, scrollQuery) {
           </div>
           <div class="reader-info-card reader-panel-card">
             <div class="reader-panel-tabs" role="tablist">
-              <button type="button" class="reader-panel-tab" id="reader-tab-toc" role="tab">목차</button>
-              <button type="button" class="reader-panel-tab" id="reader-tab-chat" role="tab">💬 채팅</button>
+              <button type="button" class="reader-panel-tab" id="reader-tab-toc" role="tab">${ICON_TOC}목차</button>
+              <button type="button" class="reader-panel-tab" id="reader-tab-chat" role="tab">${ICON_CHAT}질문</button>
             </div>
             <div class="reader-panel-body">
               <nav class="reader-toc" id="reader-toc" role="tabpanel"></nav>
@@ -882,6 +899,10 @@ async function openDocument(docId, scrollQuery) {
     readerChat.hidden = false;
     const activateReaderTab = wireReaderPanelTabs(docReaderBody, hasToc);
     docReaderBody.querySelector("#doc-chat-open-trigger").addEventListener("click", () => {
+      // aside가 접혀 있으면 탭만 바꿔봐야 display:none 안에서 벌어져서 죽은 버튼처럼 보인다 —
+      // 이 버튼은 "질문할 수 있는 상태로 만들어라"는 뜻이므로 패널을 펴는 것까지 책임진다.
+      readerAsideCollapsed = false;
+      applyReaderAsideState(docReaderBody);
       activateReaderTab("chat");
       docChatInput.focus();
     });
@@ -944,11 +965,6 @@ async function openDocument(docId, scrollQuery) {
 
 async function goToDocument(docId, scrollQuery) {
   activatePanel("documents");
-  railTabs.forEach((tab) => {
-    const isActive = tab.dataset.panel === "documents";
-    tab.setAttribute("aria-selected", String(isActive));
-    tab.tabIndex = isActive ? 0 : -1;
-  });
   await ensureDocumentsLoaded().catch(() => {});
   openDocument(docId, scrollQuery);
 }

@@ -6,8 +6,8 @@
 
   --ink: #14150f;
   --ink-dim: #52564a;
-  --ink-faint: #7a7d6f;
-  --ink-mute: #a2a495;
+  --ink-faint: #65675b;
+  --ink-mute: #717268;
 
   --moss: #3f6b31;
   --moss-soft: rgba(63, 107, 49, 0.1);
@@ -35,7 +35,6 @@
      (기획서 §8.5). 역할 구분은 폰트가 아니라 아래 자간·굵기 토큰으로 만든다. */
   --display: "Pretendard", -apple-system, "Segoe UI", sans-serif;
   --sans: "Pretendard", -apple-system, "Segoe UI", sans-serif;
-  --mono: "Pretendard", -apple-system, "Segoe UI", sans-serif;
 
   /* spacing — 4px 기반 8단계. 새 값을 만들지 말고 이 중에서 고를 것 */
   --s1: 0.25rem;   /*  4px — 칩/아이콘 내부 미세 간격 */
@@ -49,10 +48,10 @@
 
   /* type — 크기는 역할 이름으로 부른다. 리터럴 rem을 새로 쓰지 말 것.
      (아이콘 글리프 크기는 텍스트가 아니므로 이 스케일 밖이다) */
-  --text-micro: 0.625rem;  /* 10px — 태그/칩 전용 최소 단계.
-                              본문에는 쓰지 말 것: 이 크기는 가독성 하한에 가깝다 */
-  --text-meta: 0.6875rem;  /* 11px — 타임스탬프·건수·라벨 */
-  --text-caption: 0.75rem; /* 12px — 보조 설명 */
+  --text-micro: 0.6875rem; /* 11px — 태그/칩 전용 최소 단계. 본문에는 쓰지 말 것.
+                              한글은 획이 많아 10px에서 판독이 무너져 11px가 하한이다 */
+  --text-meta: 0.75rem;    /* 12px — 타임스탬프·건수·라벨 */
+  --text-caption: 0.75rem; /* 12px — 보조 설명. meta와 크기는 같고 역할이 다르다 */
   --text-sm: 0.8125rem;    /* 13px — 사이드바 본문 */
   --text-body: 0.875rem;   /* 14px — 기본 본문 */
   --text-md: 0.9375rem;    /* 15px — 강조 본문 */
@@ -83,8 +82,8 @@
 
     --ink: #ececea;
     --ink-dim: #a8aca3;
-    --ink-faint: #7d8177;
-    --ink-mute: #55584e;
+    --ink-faint: #909589;
+    --ink-mute: #848979;
 
     --moss: #8fae76;
     --moss-soft: rgba(143, 174, 118, 0.14);
@@ -140,10 +139,30 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--sans);
+  /* 기본 행간이 없으면 line-height를 명시하지 않은 규칙(라벨·칩·메타 30여 곳)이 전부
+     normal(≈1.2)로 떨어진다. 한글은 그 행간에서 답답하다. */
+  line-height: var(--leading-snug);
   word-break: keep-all;
   overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* 마크다운 답변 안의 `code`/`pre`는 지정이 없으면 브라우저 기본 고정폭 글꼴로 떨어진다
+   (문서 채팅 말풍선처럼 .agent-text 밖에서 렌더되는 경우). 본문 글꼴로 통일. */
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--sans);
+}
+
+/* 폼 컨트롤은 UA 스타일시트가 line-height: normal을 박아서 body의 행간을 상속하지 않는다 */
+button,
+input,
+textarea,
+select {
+  line-height: inherit;
 }
 
 #root-app {
@@ -242,7 +261,7 @@ body {
   top: 50%;
   transform: translate(-4px, -50%);
   white-space: nowrap;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-meta);
   letter-spacing: var(--tracking-meta);
   color: var(--bg);
@@ -294,7 +313,7 @@ body {
   display: block;
   width: 3.75rem;
   text-align: center;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-micro);
   line-height: 1.5;
   letter-spacing: 0.02em;
@@ -360,7 +379,7 @@ body {
   margin: 0 0 var(--s3);
   font-family: var(--display);
   font-weight: 700;
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   letter-spacing: var(--tracking-snug);
   color: var(--ink);
 }
@@ -388,10 +407,28 @@ body {
   gap: var(--s2);
 }
 
+/* 경고는 팁이 아니다 — 같은 무게로 나열하면 눈에 걸리지 않는다.
+   호박색 좌측 규칙 + 배경으로 종류를 분리하되, 강조 색은 최소로. */
+.chat-aside-warning {
+  margin: var(--s3) 0 0;
+  padding: var(--s2) var(--s3);
+  border-left: 2px solid var(--amber);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: var(--amber-soft);
+  font-size: var(--text-caption);
+  line-height: var(--leading-body);
+  color: var(--ink-dim);
+}
+
+.chat-aside-warning strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .chat-aside-guide p {
   margin: 0;
-  font-size: var(--text-sm);
-  line-height: var(--leading-snug);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   color: var(--ink-dim);
 }
 
@@ -436,7 +473,7 @@ body {
 .chat-aside-item-meta {
   display: block;
   margin-top: var(--s1);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-meta);
   letter-spacing: var(--tracking-meta);
   color: var(--ink-faint);
@@ -496,7 +533,7 @@ body {
 .panel-head-meta {
   flex: none;
   text-align: right;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-meta);
   letter-spacing: 0.03em;
   color: var(--ink-mute);
@@ -510,7 +547,7 @@ body {
   align-items: center;
   gap: 0.35rem;
   min-height: 2.25rem;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-caption);
   color: var(--ink-faint);
   background: none;
@@ -523,7 +560,7 @@ body {
 }
 
 .new-chat-icon {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-weight: 600;
 }
 
@@ -663,6 +700,31 @@ body {
   animation: breathe 2.4s ease-in-out 0.9s infinite;
 }
 
+/* 지면 — 새싹이 허공이 아니라 땅에서 자라 나오도록. 줄기가 다 그어진 뒤 옅게 깔린다. */
+.sprout-ground,
+.sprout-mound {
+  fill: none;
+  stroke: var(--moss);
+  stroke-linecap: round;
+  opacity: 0;
+  animation: ground-fade 0.5s var(--ease-out) 0.45s forwards;
+}
+
+.sprout-ground {
+  stroke-width: 1.5;
+}
+
+.sprout-mound {
+  stroke-width: 1.25;
+  animation-delay: 0.55s;
+}
+
+@keyframes ground-fade {
+  to {
+    opacity: 0.3;
+  }
+}
+
 @keyframes stem-grow {
   to {
     stroke-dashoffset: 0;
@@ -715,7 +777,7 @@ body {
   display: inline-flex;
   align-items: center;
   min-height: 2.25rem;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-sm);
   color: var(--ink-faint);
   background: var(--bg-raised);
@@ -863,8 +925,6 @@ body {
 
 .kind-user .turn-body {
   margin: 0;
-  /* 이전엔 --mono였다 — 세 폰트 토큰이 지금은 같은 서체라 안 보이던 실수였지만,
-     사용자가 직접 쓴 자연어를 코드용 서체로 표시하는 건 의미상 맞지 않는다 */
   font-family: var(--sans);
   font-size: var(--text-md);
   line-height: var(--leading-body);
@@ -925,7 +985,7 @@ body {
 }
 
 .agent-text code {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 0.85em;
   background: var(--bg-inset);
   border: 1px solid var(--rule-strong);
@@ -1076,7 +1136,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-meta);
   color: var(--ink-faint);
   background: var(--bg-inset);
@@ -1169,7 +1229,7 @@ body {
 }
 
 .filed-tab .filed-name {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-meta);
   color: var(--ink-faint);
   overflow-wrap: anywhere;
@@ -1226,7 +1286,7 @@ body {
 }
 
 .topic-card-count {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-meta);
   color: var(--ink-mute);
 }
@@ -1282,7 +1342,7 @@ body {
 }
 
 .topic-row-source {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-meta);
   color: var(--ink-faint);
 }
@@ -1375,7 +1435,7 @@ body {
 }
 
 .pending-text {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-sm);
   letter-spacing: 0.02em;
   color: var(--ink-dim);
@@ -1401,7 +1461,7 @@ body {
   display: inline-flex;
   align-items: center;
   min-height: 2.25rem;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-meta);
   color: var(--rust);
   background: none;
@@ -1466,7 +1526,7 @@ body {
   outline: none;
   resize: none;
   color: var(--ink);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-md);
   line-height: 1.5;
   padding: 0.3rem 0;
@@ -1489,7 +1549,7 @@ body {
   border: none;
   border-radius: 50%;
   color: var(--moss-contrast);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-md);
   padding: 0.5rem;
   cursor: pointer;
@@ -1549,7 +1609,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-caption);
   color: var(--bg);
   background: var(--moss);
@@ -1594,7 +1654,7 @@ body {
 .folder-tab {
   flex: none;
   white-space: nowrap;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-caption);
   font-weight: 600;
   color: var(--ink-faint);
@@ -1672,7 +1732,7 @@ body {
 
 .doc-list-status {
   margin: var(--s7) 0.5rem;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-caption);
   color: var(--ink-mute);
   text-align: center;
@@ -1812,7 +1872,7 @@ body {
 
 .doc-card-meta {
   flex: none;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-micro);
   letter-spacing: 0.03em;
   color: var(--ink-mute);
@@ -1840,7 +1900,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-micro);
   color: var(--moss);
   background: var(--moss-soft);
@@ -1924,7 +1984,7 @@ body {
 }
 
 .doc-reader-status {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-caption);
   color: var(--ink-mute);
   text-align: center;
@@ -1987,7 +2047,7 @@ body {
   margin: 0 0 0.6rem;
   font-family: var(--display);
   font-weight: 700;
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   color: var(--ink);
 }
 
@@ -2007,14 +2067,16 @@ body {
 
 .reader-info-row dt {
   margin: 0;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-meta);
-  color: var(--ink-mute);
+  line-height: var(--leading-snug);
+  color: var(--ink-faint);
 }
 
 .reader-info-row dd {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
+  line-height: var(--leading-snug);
   color: var(--ink-dim);
   text-align: right;
 }
@@ -2047,9 +2109,9 @@ body {
   border: none;
   background: none;
   padding: 0.3rem 0 0.3rem calc(var(--depth, 0) * 0.75rem);
-  font-size: var(--text-sm);
-  line-height: 1.4;
-  color: var(--ink-mute);
+  font-size: var(--text-body);
+  line-height: var(--leading-snug);
+  color: var(--ink-dim);
   cursor: pointer;
   border-radius: var(--radius-control);
   transition: color 0.15s var(--ease-out), background 0.15s var(--ease-out);
@@ -2075,7 +2137,7 @@ body {
 }
 
 .doc-reader-eyebrow {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-meta);
   letter-spacing: var(--tracking-meta);
   color: var(--ink-mute);
@@ -2114,7 +2176,7 @@ body {
 .tag-add-chip {
   display: inline-flex;
   align-items: center;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-micro);
   color: var(--ink-faint);
   background: none;
@@ -2142,7 +2204,7 @@ body {
 }
 
 .tag-add-input {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-micro);
   width: 7rem;
   padding: 0.1rem 0.5rem;
@@ -2182,7 +2244,7 @@ body {
 }
 
 .note-meta-label {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-meta);
   color: var(--ink-mute);
   margin-right: 0.2rem;
@@ -2190,7 +2252,7 @@ body {
 
 .note-meta-chip {
   display: inline-flex;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-micro);
   color: var(--ink-dim);
   background: var(--bg-raised);
@@ -2264,7 +2326,7 @@ body {
 
 .search-icon {
   flex: none;
-  font-family: var(--mono);
+  font-family: var(--sans);
   color: var(--ink-mute);
   font-size: var(--text-base);
 }
@@ -2276,7 +2338,7 @@ body {
   border: none;
   outline: none;
   color: var(--ink);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-body);
 }
 
@@ -2325,7 +2387,7 @@ body {
 }
 
 .doc-search-hit-section {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--text-micro);
   letter-spacing: var(--tracking-meta);
   text-transform: uppercase;
@@ -2361,6 +2423,8 @@ body {
   .sprout-stem,
   .sprout-leaf,
   .sprout-seed,
+  .sprout-ground,
+  .sprout-mound,
   .doc-card,
   .doc-search-hit,
   .doc-reader-body.is-entering,
@@ -2389,6 +2453,10 @@ body {
   }
   .sprout-stem {
     stroke-dashoffset: 0;
+  }
+  .sprout-ground,
+  .sprout-mound {
+    opacity: 0.3;
   }
   .sprout-leaf {
     opacity: 1;
@@ -2551,8 +2619,18 @@ body {
   outline-offset: 2px;
 }
 
+.ui-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+}
+
 .doc-chat-open-trigger {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius-control);
   background: var(--bg-raised);
@@ -2579,7 +2657,12 @@ body {
 
 .reader-panel-tab {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
   padding: 0.65rem 0.5rem;
+  font-size: var(--text-body);
   border: none;
   border-bottom: 2px solid transparent;
   background: none;
