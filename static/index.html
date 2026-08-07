@@ -19,14 +19,6 @@
 <body>
   <div id="root-app" class="app">
     <nav class="rail" aria-label="패널 전환" id="rail">
-      <div class="rail-mark" id="rail-mark" aria-hidden="true" title="새싹">
-        <svg class="rail-mark-sprout" id="rail-mark-svg" viewBox="0 0 48 64" width="24" height="32" aria-hidden="true">
-          <path class="rail-mark-leaf" d="M24 36 C 12 36, 6 26, 8 13 C 19 15, 25 24, 24 36 Z" />
-          <path class="rail-mark-leaf" d="M24 28 C 36 28, 42 19, 40 8 C 30 10, 24 17, 24 28 Z" />
-          <path class="rail-mark-stem" d="M24 58 L24 21" />
-        </svg>
-      </div>
-
       <div class="rail-tabs" role="tablist" aria-label="패널" aria-orientation="vertical">
         <span class="rail-indicator" id="rail-indicator" aria-hidden="true"></span>
         <button type="button" class="rail-tab" id="tab-chat" role="tab" aria-selected="true" tabindex="0"
@@ -78,7 +70,7 @@
     <section class="panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" tabindex="0">
       <header class="panel-head">
         <div class="panel-head-main">
-          <h1 class="panel-title"><span class="title-dot" aria-hidden="true"></span>Knowledge Gardener</h1>
+          <h1 class="panel-title">Knowledge Gardener</h1>
           <p class="panel-sub">근거로 답하고, 기록으로 남깁니다.</p>
         </div>
         <button type="button" class="new-chat-btn" id="new-chat-btn">
@@ -91,7 +83,7 @@
           <main class="transcript" id="transcript">
             <div class="transcript-inner" id="transcript-inner">
               <div class="empty" id="empty-state">
-                <svg class="sprout-mark" viewBox="0 0 48 64" width="48" height="64" aria-hidden="true">
+                <svg class="sprout-mark" viewBox="0 0 48 64" width="72" height="96" aria-hidden="true">
                   <path class="sprout-leaf sprout-leaf-l"
                     d="M24 36 C 12 36, 6 26, 8 13 C 19 15, 25 24, 24 36 Z" />
                   <path class="sprout-leaf sprout-leaf-r"
