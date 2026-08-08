@@ -21,16 +21,6 @@ _LINK_ONLY = re.compile(r"^\[[^\]]+\]\([^)]*\)\s*$")
 _HR = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
 
 
-def _strip_frontmatter(text: str) -> str:
-    if not text.startswith("---"):
-        return text
-    parts = text.split("---", 2)
-    return parts[2].lstrip("\n") if len(parts) == 3 else text
-
-
-# writer.py already writes this frontmatter (topic/related_concepts/keywords/actionplan
-# etc.) at save time — surface it as-is instead of re-deriving similar info from the
-# rendered markdown body, which would just be guessing.
 def _parse_frontmatter(text: str) -> dict[str, object] | None:
     if not text.startswith("---"):
         return None
@@ -77,7 +67,7 @@ def _to_summary(row) -> DocumentSummary | None:
     return DocumentSummary(
         id=row["source_path"],
         title=row["title"],
-        excerpt=_excerpt(_strip_frontmatter(raw)),
+        excerpt=_excerpt(catalog.strip_frontmatter(raw)),
         char_count=row["char_count"],
         created_at=row["created_at"],
         doc_type=row["doc_type"],
@@ -104,7 +94,7 @@ def get_document(doc_id: str) -> DocumentDetail:
     return DocumentDetail(
         id=doc_id,
         title=row["title"],
-        content=_strip_frontmatter(raw),
+        content=catalog.strip_frontmatter(raw),
         char_count=row["char_count"],
         created_at=row["created_at"],
         doc_type=row["doc_type"],
@@ -135,14 +125,19 @@ def search_documents(query: str, limit: int = 20) -> SearchResponse:
         return SearchResponse(query=query, hits=[])
     q_lower = q.lower()
 
+    if len(q) >= 3:
+        rows = catalog.fts_search(q, limit=limit * 5)
+    else:
+        rows = catalog.list_documents()
+
     hits: list[SearchHit] = []
-    for row in catalog.list_documents():
+    for row in rows:
         if len(hits) >= limit:
             break
         path = PROJECT_ROOT / row["source_path"]
         if not path.exists():
             continue
-        text = _strip_frontmatter(path.read_text(encoding="utf-8"))
+        text = catalog.strip_frontmatter(path.read_text(encoding="utf-8"))
         title = row["title"]
         current_section = title
 
