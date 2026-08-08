@@ -28,9 +28,10 @@ from pydantic import BaseModel  # noqa: E402
 
 from app.core.paths import PROCESSED_DIR, PROJECT_ROOT  # noqa: E402
 from app.rag.chain import (  # noqa: E402
-    PROMPT, RELEVANCE_THRESHOLD, TOP_K, apply_fallback, bm25_search, build_bm25, build_chroma_client,
+    RELEVANCE_THRESHOLD, TOP_K, apply_fallback, bm25_search, build_bm25, build_chroma_client,
     build_embeddings, build_judge_llm, build_llm, hybrid_merge, load_split_docs, section_key,
 )
+from app.rag.prompts import PROMPT  # noqa: E402
 
 DATA_PATH = PROJECT_ROOT / "data" / "eval" / "benchmark.jsonl"
 RESULTS_DIR = PROJECT_ROOT / "data" / "eval" / "results"
