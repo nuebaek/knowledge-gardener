@@ -4,16 +4,17 @@ from langgraph.graph import MessagesState
 from langchain_core.messages import AIMessage, SystemMessage
 from app.rag.chain import (
     _extract_sources, apply_fallback, TOP_K, RELEVANCE_THRESHOLD, study_turn,
-    TOPIC_EXTRACT_PROMPT, generate_recall_question, bm25_search, rerank_docs, RERANK_POOL_K,
+    generate_recall_question, bm25_search, rerank_docs, RERANK_POOL_K,
 )
+from app.rag.prompts import TOPIC_EXTRACT_PROMPT
 from app.rag.state import GraphState, StudySessionState
-from app.rag.study_session import apply_verdict, flatten_conversation, is_complete, serialize_for_daily_note
+from app.rag.study_session import (
+    MAX_CONTEXT_MESSAGES, apply_verdict, flatten_conversation, is_complete, serialize_for_daily_note,
+)
 from app.schemas.rag import TopicList
 from app.writer.writer import save_raw_session, write_daily_note
 
 logger = logging.getLogger(__name__)
-
-MAX_CONTEXT_MESSAGES = 20
 
 FINALIZE_CONFIRM_MESSAGE = "수고했어요! 오늘 배운 내용 정리해서 저장할까요? 더 이야기하고 싶은 게 있으면 말해주세요."
 
@@ -172,13 +173,18 @@ def make_study_node(judge_llm, gen_llm, search_sources):
         }
 
     def confirm_topics_node(state: StudySessionState):
-        # 프런트가 체크된 항목만 selected_topics로 보낸다 — LLM에게 "이건 빼줘" 같은
-        # 자연어 재해석을 맡기지 않고, pending과의 정확한 문자열 매치로 결정론적으로 거른다.
         selected = state.get("selected_topics")
         pending = state["pending"]
-        kept = [t for t in pending if t in selected] if selected else pending
-        if not kept:
-            kept = pending  # 전부 해제하고 시작을 눌러도 세션 자체가 사라지진 않게
+
+        if selected is None:
+            kept = pending
+        else:
+            kept = [t for t in pending if t in selected]
+            if not kept:
+                return {
+                    "awaiting_topic_confirm": True,  # 계속 확인 대기 유지
+                    "messages": [AIMessage("체크된 주제가 없어요. 어떤 걸로 시작할지 직접 말해줄래요?")],
+                }
 
         conversation = flatten_conversation(state["messages"])
         question = generate_recall_question(gen_llm, kept[0], conversation)
@@ -190,14 +196,14 @@ def make_study_node(judge_llm, gen_llm, search_sources):
         }
 
     def confirm_finalize_node(state: StudySessionState):
-        reply = state["messages"][-1].content
-        messages = TOPIC_EXTRACT_PROMPT.invoke({"conversation": reply}).to_messages()
+        # write_daily와 동일하게 flatten_conversation으로 라벨+히스토리를 유지한다.
+        conversation = flatten_conversation(state["messages"])
+        messages = TOPIC_EXTRACT_PROMPT.invoke({"conversation": conversation}).to_messages()
         topics = topic_extractor.invoke(messages)
 
         if not topics.topics:
             return finalize_node(state)
 
-        conversation = flatten_conversation(state["messages"])
         question = generate_recall_question(gen_llm, topics.topics[0], conversation)
         return {
             "pending": topics.topics,
