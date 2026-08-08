@@ -7,8 +7,9 @@ from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
 from app.core import catalog
-from app.rag.chain import apply_fallback, build_llm, TOPIC_EXTRACT_PROMPT
+from app.rag.chain import apply_fallback, build_llm
 from app.rag.graph import build_rag_graph
+from app.rag.prompts import TOPIC_EXTRACT_PROMPT
 from app.rag.study_session import flatten_conversation, new_session
 from app.schemas.rag import TopicList
 from app.visualizer.visualizer import visualize_mindmap_text

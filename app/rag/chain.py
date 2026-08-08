@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.language_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
@@ -18,6 +17,9 @@ from rank_bm25 import BM25Okapi
 
 from app.core import catalog
 from app.core.paths import CHROMA_DIR, PROJECT_ROOT
+from app.rag.prompts import (
+    DOC_QA_PROMPT, RECALL_QUESTION_PROMPT, TURN_PROMPT, format_doc_chat_history,
+)
 from app.schemas.rag import TurnResult
 
 load_dotenv()
@@ -28,8 +30,6 @@ CHROMA_COLLECTION = "cs231n_v2"
 EMBED_MODEL = os.getenv("EMBED_MODEL", "dragonkue/multilingual-e5-small-ko-v2")
 TOP_K = 5
 RELEVANCE_THRESHOLD = float(os.getenv("RELEVANCE_THRESHOLD", "0.47"))
-# RRF는 n=210 eval에서 dense/BM25 단독보다 MRR이 낮아 프로덕션에서 기각됨(hybrid_merge
-# 독스트링 참고) — rerank_docs로 대체. RRF_K는 scripts/benchmark.py 등 eval 비교용 스윕에만 쓰임.
 RRF_K = int(os.getenv("RRF_K", "60"))
 
 
@@ -145,14 +145,10 @@ _vectorstore_cache: dict = {}
 
 
 def get_vectorstore(embeddings, collection: str = CHROMA_COLLECTION):
-    # HuggingFaceEmbeddings는 pydantic 모델이라 해시가 안 돼서 @lru_cache에 못 씀 —
-    # id() 기반 수동 캐시. search_source_paths가 호출될 때마다(finalize_node가 seedling마다
-    # 루프로 부름) 매번 Chroma 클라이언트를 새로 열고 sync_index를 재실행하던 것을 막는다.
-    key = (id(embeddings), collection)
-    if key in _vectorstore_cache:
-        return _vectorstore_cache[key]
+    if collection in _vectorstore_cache:
+        return _vectorstore_cache[collection]
     vectorstore = _build_vectorstore(embeddings, collection)
-    _vectorstore_cache[key] = vectorstore
+    _vectorstore_cache[collection] = vectorstore
     return vectorstore
 
 
@@ -209,13 +205,7 @@ def _doc_key(doc) -> str:
 
 
 def hybrid_merge(dense_docs: list, bm25_docs: list, k: int, rrf_k: int = 60) -> list:
-    """Reciprocal Rank Fusion — 프로덕션에서는 안 씀(rerank_docs로 대체됨), eval 비교용으로만 유지.
-
-    n=210(섹션 단위 gold) 실측: RRF는 rrf_k를 뭘로 스윕해도(4/10/20/60) dense 단독
-    (MRR 0.831)·BM25 단독(0.853)을 못 이김 — 약한 쪽 순위가 강한 쪽을 희석시키는 것으로
-    보임. 최종적으로 dense+BM25 후보를 cross-encoder로 재점수하는 rerank_docs()를 채택
-    (retrieval MRR 0.861, generation faithfulness 100%로 둘 다 dense 단독보다 나음).
-    상세 근거: docs/2026-08-04-hybrid-search-design.md §4, §7."""
+    """Reciprocal Rank Fusion — 프로덕션에서는 안 씀(rerank_docs로 대체), eval 비교용으로만 유지."""
     scores: dict[str, float] = {}
     docs_by_key: dict[str, object] = {}
     for source in (dense_docs, bm25_docs):
@@ -238,13 +228,7 @@ def build_reranker():
 
 
 def rerank_docs(reranker, query: str, dense_docs: list, bm25_docs: list, k: int) -> tuple[list, list]:
-    """dense+BM25 후보 풀을 cross-encoder로 재점수한다. RRF(순위만 합산)는 n=210 실측에서
-    dense 단독(MRR 0.831)·BM25 단독(0.853)을 어떤 가중치로도 못 이겨서 기각했다 — 약한 쪽
-    순위가 강한 쪽을 희석시키는 것으로 보임. 리랭킹은 순위를 섞지 않고 질의-문서 쌍을
-    직접 채점하는 구조라 이 문제가 없고, 실측(같은 n=210)으로도 retrieval(MRR 0.861)·
-    generation(faithfulness 98%→100%, correctness 92%→97%) 둘 다 dense 단독보다 낫다.
-    비용은 레이턴시(+1.4초/요청, cross-encoder가 후보마다 forward pass) — 실시간 채팅이
-    아닌 개인 학습 도구라 감수. 근거: docs/2026-08-04-hybrid-search-design.md §7."""
+    """dense+BM25 후보 풀을 cross-encoder로 reranking한다."""
     seen, pool = set(), []
     for doc in dense_docs + bm25_docs:
         key = (doc.metadata.get("source", "?"), doc.page_content[:80])
@@ -273,18 +257,22 @@ def build_llm():
             model=os.getenv("OLLAMA_MODEL", "gemma4:e2b"),
             base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         )
-    if provider == "google":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(
-            model=os.getenv("GOOGLE_MODEL", "gemini-2.5-flash"),
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
-        )
     from langchain_cerebras import ChatCerebras
     return ChatCerebras(
         model=os.getenv("CEREBRAS_MODEL", "gemma-4-31b"),
         api_key=os.getenv("CEREBRAS_API_KEY"),
         max_retries=0,
     )
+
+
+@lru_cache(maxsize=1)
+def build_cerebras_fallback_llm():
+    """primary Cerebras 키가 429일 때 먼저 시도할 두 번째(유료) 키. 없으면 스킵하고 바로 Haiku."""
+    key = os.getenv("CEREBRAS_FALLBACK_API_KEY")
+    if not key:
+        return None
+    from langchain_cerebras import ChatCerebras
+    return ChatCerebras(model=os.getenv("CEREBRAS_MODEL", "gemma-4-31b"), api_key=key, max_retries=0)
 
 
 @lru_cache(maxsize=1)
@@ -312,11 +300,9 @@ def default_llm():
 
 
 def apply_fallback(model, configure=lambda m: m, fallback=None):
-    """fallback 없으면 build_fallback_llm() 사용, 리스트면 순서대로 시도. 전부 실패 시
-    마지막 에러를 던진다(langchain with_fallbacks는 첫 에러만 던져 원인 파악이 안 됨)."""
     if not isinstance(model, BaseChatModel):
         return configure(model)
-    fb = fallback if fallback is not None else build_fallback_llm()
+    fb = fallback if fallback is not None else [build_cerebras_fallback_llm(), build_fallback_llm()]
     raw_models = [model] + [f for f in (fb if isinstance(fb, list) else [fb]) if f is not None]
     if len(raw_models) == 1:
         return configure(model)
@@ -338,153 +324,14 @@ def apply_fallback(model, configure=lambda m: m, fallback=None):
     return RunnableLambda(_invoke_with_fallback)
 
 
-PROMPT = ChatPromptTemplate.from_messages([
-    ("system",
-     "You are a document-grounded Q&A assistant. "
-     "Answer using ONLY the provided documents — do not rely on prior knowledge or infer beyond what is explicitly written. "
-     "Match your response language to the question (Korean → Korean, English → English) in EVERY case, "
-     "including when you cannot answer. "
-     "If the documents lack sufficient information, say so clearly in the question's own language — "
-     "for example, Korean: \"제공된 자료에 이 내용이 없습니다.\" / English: \"The provided materials do not cover this.\" "
-     "Never default to English when the question was asked in another language.\n\n"
-     "{context}"),
-    ("human", "{question}"),
-])
-
-
-DOC_QA_PROMPT = ChatPromptTemplate.from_messages([
-    ("system",
-     "You are a Q&A assistant answering questions about ONE specific document. "
-     "Answer using ONLY the document text below — do not rely on prior knowledge or infer beyond "
-     "what is explicitly written. Match your response language to the question (Korean → Korean, "
-     "English → English) in EVERY case, including when you cannot answer. If the document lacks "
-     "sufficient information, say so clearly in the question's own language — for example, "
-     "Korean: \"이 문서에 이 내용이 없습니다.\" / English: \"This document does not cover this.\" "
-     "Never default to English when the question was asked in another language.\n\n"
-     "DOCUMENT:\n{document}"),
-    ("human", "{conversation}Q: {question}"),
-])
-
-
-def _format_doc_chat_history(history: list[dict]) -> str:
-    if not history:
-        return ""
-    lines = [f"{'Q' if h['role'] == 'user' else 'A'}: {h['content']}" for h in history]
-    return "\n".join(lines) + "\n"
-
-
 def answer_document_question(question: str, document_text: str, history: list[dict]) -> str:
     llm = apply_fallback(build_llm())
     chain = DOC_QA_PROMPT | llm | StrOutputParser()
     return chain.invoke({
         "document": document_text,
-        "conversation": _format_doc_chat_history(history),
+        "conversation": format_doc_chat_history(history),
         "question": question,
     })
-
-
-REWRITE_PROMPT = ChatPromptTemplate.from_messages([
-    ("system",
-     "You rewrite search queries for a document retrieval system. "
-     "The query below failed to retrieve relevant documents. "
-     "Rewrite it using more precise or alternative technical terminology, "
-     "or reframe it from a different angle, so that a new search against the same "
-     "corpus is more likely to find relevant material. "
-     "Keep the original intent and scope — do not broaden into a different topic, "
-     "and do not answer the question yourself. "
-     "Match the language of the original query exactly (Korean → Korean, English → English). "
-     "Output ONLY the rewritten query as one line — no explanation, no prefix, no quotes."
-    ),
-    ("human",
-     "Original question to rewrite: \"{question}\"\n"
-     "A previous rewrite attempt also failed to retrieve relevant results: \"{rewritten_question}\"\n\n"
-     "Write ONE new rewritten query, different from the previous attempt."),
-])
-
-
-TOPIC_EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
-    ("system",
-     "Extract the distinct study topics or concepts the user says they covered today, from the "
-     "conversation below (each line prefixed with its speaker: human/ai/tool). List each topic "
-     "once, using the user's own wording — do not rename or generalize it into different "
-     "terminology. Do not explain any topic.\n\n"
-     "CRITICAL: a topic the human only ASKED ABOUT earlier in this conversation (a question "
-     "answered via a tool/RAG lookup) is NOT something they studied today — only extract topics "
-     "from what the human explicitly states THEY studied/covered themselves (a retrospective "
-     "statement, e.g. \"오늘 도커 공부했어\"). If the human asked a question and got an answer, "
-     "that exchange alone does not count unless the human separately says they studied it.\n\n"
-     "Also write `umbrella`: a short title (a few words) covering all of today's topics together, "
-     "used as this session's note title/filename. Prefer the broader subject they belong to over a "
-     "comma-joined list of the topics themselves — e.g. topics `Dockerfile 캐시 레이어`, "
-     "`bind-mount` → umbrella `Docker 배포`. Match the language of the conversation."),
-    ("human", "{conversation}"),
-])
-
-
-TURN_PROMPT = ChatPromptTemplate.from_messages([
-    ("system",
-     "You are running a Korean-language retrieval-practice (인출 학습) study session. The user "
-     "just tried to explain `{topic}` in their own words. Do TWO independent jobs and return them "
-     "in the TurnResult schema.\n\n"
-     "## JOB 1 — verdict (judge STANCE, never correctness)\n"
-     "Classify the user's message into exactly one label. You NEVER judge whether the explanation "
-     "is factually right — only the user's own expressed confidence.\n"
-     "- \"explained\": a genuine, self-assured explanation in their own words.\n"
-     "- \"partial\": they attempted an explanation but signaled THEIR OWN uncertainty — hedging "
-     "(\"~인 것 같은데\", \"아마\", \"맞나?\"), trailing off, or saying part is unclear. The content "
-     "may even be fully correct; what matters is that THEY are unsure.\n"
-     "- \"skip\": declined or said they don't know, with no real attempt (\"모르겠어\", \"넘어가\", "
-     "\"패스\", \"몰라\").\n\n"
-     "## JOB 2 — stay_on_topic + next_question\n"
-     "Check whether the user's message only NAMES a sub-point without truly explaining it — "
-     "mentions a term or a split into parts but doesn't elaborate on any of them, glosses over "
-     "the reasoning, or never says how it's actually used.\n\n"
-     "This check is MANDATORY every single time, with NO exception for the last topic. Whether "
-     "next_topic is a real topic or \"none\" has NO bearing on whether you run this check — "
-     "decide shallow-vs-thorough first, from the content of the message ALONE. Being the last "
-     "topic is never a reason to skip it or wrap up early. This pattern applies to ANY subject, "
-     "not just technical ones.\n\n"
-     "Example: user says \"광합성은 명반응이랑 암반응으로 나뉘어\" and stops there → shallow, "
-     "stay_on_topic=true, ask a follow-up about what each reaction actually does. If they go on "
-     "to also explain what happens in the 명반응 and what happens in the 암반응 → already "
-     "thorough, stay_on_topic=false, move on.\n\n"
-     "- If shallow: set stay_on_topic to true, and ask ONE follow-up question using exactly ONE "
-     "of these three angles — whichever fits what was actually left unexplained:\n"
-     "  1. Clarification: a question that pins down exactly what the mentioned part means or "
-     "does.\n"
-     "  2. Reasoning: a question asking why it works that way, or why it's needed.\n"
-     "  3. Application: a question asking how it's actually used, or how it connects to another "
-     "concept.\n"
-     "  HARD CONSTRAINT: build the follow-up ONLY from words, terms, or facts the user has "
-     "already said themselves earlier in this conversation. NEVER introduce a new term, a new "
-     "comparison, or any fact the user has not already stated — doing so both pushes the "
-     "difficulty past what they've shown they know, and can leak the answer through the "
-     "question's own premise.\n"
-     "- Otherwise (already thorough): set stay_on_topic to false.\n"
-     "  - If next_topic is a real topic: write exactly ONE short, natural Korean question asking "
-     "the user to explain `{next_topic}` in their own words.\n"
-     "  - If next_topic is \"none\": the session is ending — set next_question to null. Do NOT "
-     "invent a question.\n\n"
-     "CRITICAL (applies to any question, whichever branch): NEVER explain, define, hint at, or "
-     "reveal any part of the answer — the user must recall it themselves. Match the tone and "
-     "flow of the conversation so far; vary your wording every time, never reuse a fixed "
-     "template."),
-    ("human",
-     "next_topic: {next_topic}\n\nConversation so far:\n{conversation}\n\n"
-     "User's message about `{topic}`: {message}"),
-])
-
-
-RECALL_QUESTION_PROMPT = ChatPromptTemplate.from_messages([
-    ("system",
-     "You are running a retrieval-practice (인출 학습) study session. Ask the user to explain "
-     "the given topic in their OWN words. Write ONE short, natural question that fits the tone "
-     "and flow of the conversation so far — vary your wording, never reuse a fixed template. "
-     "Output only the question, nothing else. "
-     "CRITICAL: never explain, define, hint at, or reveal any part of the answer — the whole "
-     "point is that the user recalls it themselves."),
-    ("human", "Conversation so far:\n{conversation}\n\nAsk about this topic: {topic}"),
-])
 
 
 def generate_recall_question(llm, topic: str, conversation: str) -> str:
@@ -492,24 +339,6 @@ def generate_recall_question(llm, topic: str, conversation: str) -> str:
         {"conversation": conversation, "topic": topic}
     ).to_messages()
     return apply_fallback(llm).invoke(messages).content
-
-
-AGENT_SYSTEM_PROMPT = (
-    "You are a study coach. You have five tools: `answer_question`, `write_daily`, "
-    "`write_weekly`, `write_til`, and `visualize_mindmap`. Rely on each tool's own description "
-    "for when to use it.\n\n"
-    "MUST — questions: whenever the user asks what something is or how it works, call "
-    "`answer_question`. Never answer from your own knowledge, even if you are sure.\n\n"
-    "MUST — retrospectives: whenever the user wants a project/task retrospective, call "
-    "`write_til` (or `write_weekly` for a weekly summary). Never invent field values — if a "
-    "required field is missing, ask the user for it.\n\n"
-    "MUST — daily study: whenever the user wants to record or review what they studied today "
-    "(회고형 발화, e.g. \"오늘 배운 거 정리해줘\"), call `write_daily` immediately. It starts a "
-    "retrieval-practice (인출 학습) session that asks the user to recall each topic in their own "
-    "words. Do NOT list topics, ask questions, or explain anything yourself — the session "
-    "handles all of that. Your only job here is to call the tool.\n\n"
-    "If the user only greets you or makes small talk, respond directly without calling any tool."
-)
 
 
 def _format_docs(docs):

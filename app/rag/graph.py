@@ -3,8 +3,9 @@ from langgraph.prebuilt import tools_condition, ToolNode
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app.rag.state import GraphState, StudySessionState
-from app.rag.chain import build_embeddings, build_llm, get_vectorstore, search_source_paths, PROMPT, REWRITE_PROMPT, AGENT_SYSTEM_PROMPT, build_bm25, load_split_docs, build_reranker
+from app.rag.chain import build_embeddings, build_llm, get_vectorstore, search_source_paths, build_bm25, load_split_docs, build_reranker
 from app.rag.nodes import make_nodes, make_agent_node, make_study_node
+from app.rag.prompts import AGENT_SYSTEM_PROMPT, PROMPT, REWRITE_PROMPT
 
 
 def route_after_grade(state: GraphState):
