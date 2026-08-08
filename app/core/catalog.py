@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS document_tags (
 );
 
 CREATE INDEX IF NOT EXISTS idx_documents_doc_type ON documents(doc_type);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
+    source_path UNINDEXED, title, body, tokenize='trigram'
+);
 """
 
 
@@ -56,6 +60,13 @@ def _connect():
 
 def _rel(path: Path) -> str:
     return path.resolve().relative_to(BASE_DIR.resolve()).as_posix()
+
+
+def strip_frontmatter(text: str) -> str:
+    if not text.startswith("---"):
+        return text
+    parts = text.split("---", 2)
+    return parts[2].lstrip("\n") if len(parts) == 3 else text
 
 
 def upsert_document(path: Path, *, source_type: str, doc_type: str, title: str) -> bool:
@@ -88,6 +99,11 @@ def upsert_document(path: Path, *, source_type: str, doc_type: str, title: str) 
                 source_path, title, source_type, doc_type, content_hash, len(content),
                 row["created_at"] if row else now, now,
             ),
+        )
+        conn.execute("DELETE FROM documents_fts WHERE source_path = ?", (source_path,))
+        conn.execute(
+            "INSERT INTO documents_fts (source_path, title, body) VALUES (?, ?, ?)",
+            (source_path, title, strip_frontmatter(content)),
         )
     return True
 
@@ -150,6 +166,22 @@ def prune_missing() -> list[str]:
 def delete_document(source_path: str) -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM documents WHERE source_path = ?", (source_path,))
+        conn.execute("DELETE FROM documents_fts WHERE source_path = ?", (source_path,))
+
+
+def fts_search(query: str, limit: int = 100) -> list[dict]:
+    """trigram 매치를 관련도(rank)순으로, source_path/title을 반환한다. title까지 여기서
+    바로 뽑는 이유: 매치 건마다 get_document()를 따로 부르면 _connect()가 매번 새 커넥션을
+    여는 비용이 매치 수만큼 쌓여, 매치가 많은(흔한) 검색어에서는 그 비용이 이 함수로
+    아끼려던 전수 스캔 비용을 넘어서 버린다(실측으로 확인). title은 이미 documents_fts
+    컬럼에 있으니 조인 없이 한 번의 조회로 끝낸다."""
+    literal = '"' + query.replace('"', '""') + '"'
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT source_path, title FROM documents_fts WHERE documents_fts MATCH ? ORDER BY rank LIMIT ?",
+            (literal, limit),
+        ).fetchall()
+    return [{"source_path": r["source_path"], "title": r["title"]} for r in rows]
 
 
 def list_tags(source_path: str) -> list[str]:
