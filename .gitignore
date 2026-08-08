@@ -20,6 +20,11 @@ chroma_data/
 data/*
 !data/processed
 
+# 평가셋은 공개 (재현 가능하게) — 단, 중간 산출물과 원시 결과 덤프는 제외
+!data/eval/
+data/eval/**/_workspace/
+data/eval/results/
+
 .claude/
 
 # AI 에이전트/스킬 도구 산출물 — 로컬 상태, 레포엔 안 실음
@@ -40,6 +45,11 @@ docs/*.md
 !docs/README.md
 !docs/ENGINEERING.md
 
+# 공개하는 엔지니어링 기록 (README에서 링크)
+!docs/2026-07-30-oom-postmortem.md
+!docs/2026-08-04-hybrid-search-design.md
+!docs/2026-08-06-평가-방법론-종합.md
+
 # 스파이크/노트북 산출물
 tests/test_visualizer.ipynb
 tests/*.html
@@ -52,3 +62,20 @@ tests/*.html
 
 .pytest_cache/
 .ruff_cache/
+.benchmarks/
+.deepeval/
+.backup/
+
+# Obsidian 볼트 설정 — 로컬 편집 환경, 레포엔 안 실음
+.obsidian/
+
+# 루트 개인 메모 / 도구 산출물 — 레포엔 안 실음
+/SKILL.md
+/CLAUDE.md
+/manyfast_wireframe.html
+/agents/
+/interface-design
+/interface-design 2
+/*멘토링*.md
+/Knowledge Gardener*.md
+docs/superpowers/
