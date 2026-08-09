@@ -196,17 +196,21 @@ def make_study_node(judge_llm, gen_llm, search_sources):
         }
 
     def confirm_finalize_node(state: StudySessionState):
-        # write_daily와 동일하게 flatten_conversation으로 라벨+히스토리를 유지한다.
-        conversation = flatten_conversation(state["messages"])
-        messages = TOPIC_EXTRACT_PROMPT.invoke({"conversation": conversation}).to_messages()
+        last_user_msg = state["messages"][-1].content
+        messages = TOPIC_EXTRACT_PROMPT.invoke({"conversation": f"human: {last_user_msg}"}).to_messages()
         topics = topic_extractor.invoke(messages)
 
-        if not topics.topics:
+        # 이번 세션에서 이미 판정 끝난 토픽은 새 주제가 아니다.
+        done = {a["topic"] for a in state["answered"]} | {s["topic"] for s in state["seedlings"]}
+        fresh = [t for t in topics.topics if t not in done]
+
+        if not fresh:
             return finalize_node(state)
 
-        question = generate_recall_question(gen_llm, topics.topics[0], conversation)
+        conversation = flatten_conversation(state["messages"])
+        question = generate_recall_question(gen_llm, fresh[0], conversation)
         return {
-            "pending": topics.topics,
+            "pending": fresh,
             "umbrella": state.get("umbrella") or topics.umbrella,
             "awaiting_finalize": False,
             "messages": [AIMessage(question)],

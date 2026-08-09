@@ -5,7 +5,7 @@ LLM이 하는 판단(explained/partial/skip)이 아니라, 그 판정을 상태�
 """
 from unittest.mock import MagicMock
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from app.rag.study_session import new_session, apply_verdict, is_complete
 
@@ -167,3 +167,91 @@ def test_study_node_accumulates_explanation_across_deepen_then_resolve():
         "explanation": "추론은 prefill과 decode로 나뉘어\nprefill은 kv cache 만들고, decode는 순차 생성",
     }]
     assert round2["current_explanation"] == ""
+
+
+# --- confirm_finalize_node: "정리해서 저장할까요?"에 대한 답 처리 -----------------
+from app.schemas.rag import TopicList                                    # noqa: E402
+
+
+def _confirm_finalize_node_with(extracted: TopicList, write_daily_note):
+    """토픽 추출기가 extracted를 내도록 고정한 fake LLM으로 confirm_finalize_node를 만든다."""
+    llm = MagicMock()
+    llm.with_structured_output.return_value.invoke.return_value = extracted
+    _, _, confirm_finalize_node, _ = make_study_node(llm, llm, search_sources=lambda topic: [])
+    return confirm_finalize_node
+
+
+def _finished_session_state(reply: str):
+    """세 토픽을 다 다루고 awaiting_finalize 상태에서 reply를 받은 상태."""
+    return {
+        "messages": [
+            HumanMessage("오늘 Transformer 공부했어. self attention, positional encoding, multi head attention"),
+            AIMessage(FINALIZE_CONFIRM_MESSAGE),
+            HumanMessage(reply),
+        ],
+        "pending": [],
+        "answered": [{"topic": "self attention", "explanation": "Query/Key/Value로 관련도를 계산해"}],
+        "seedlings": [
+            {"topic": "positional encoding", "user_wording": "모르겠어"},
+            {"topic": "multi head attention", "user_wording": "잘 모르겠어"},
+        ],
+        "umbrella": "Transformer",
+    }
+
+
+def test_confirm_finalize_saves_when_user_says_yes(tmp_path, monkeypatch):
+    """회귀: "응 저장해줘"에 저장이 실행돼야 한다.
+
+    대화 전체를 토픽 추출기에 넣던 시절에는 세션을 시작시킨 발화가 매번 재추출돼서
+    topics가 비지 않았고, 저장 대신 이미 끝낸 첫 토픽(self attention)을 다시 물었다.
+    """
+    saved = []
+    monkeypatch.setattr("app.rag.nodes.save_raw_session", lambda **kw: tmp_path / "raw.md")
+    monkeypatch.setattr("app.rag.nodes.write_daily_note",
+                        lambda **kw: saved.append(kw) or (tmp_path / "transformer.md"))
+
+    # 추출기가 "응 저장해줘"에서 아무 주제도 못 찾는 정상 케이스
+    llm = MagicMock()
+    extractor = llm.with_structured_output.return_value
+    extractor.invoke.return_value = TopicList(topics=[], umbrella="")
+    _, _, node, _ = make_study_node(llm, llm, search_sources=lambda topic: [])
+
+    out = node(_finished_session_state("응 저장해줘"))
+
+    assert out["awaiting_finalize"] is False
+    assert out["saved_documents"] == [{"type": "dailynote", "file_name": "transformer.md"}]
+    assert "저장했어요" in out["messages"][0].content
+    assert "pending" not in out                      # 새 세션을 열지 않는다
+
+    # 추출기에 들어간 건 사용자의 답 한 줄뿐 — 세션을 시작시킨 발화가 섞이면 안 된다.
+    prompt_text = str(extractor.invoke.call_args.args[0])
+    assert "응 저장해줘" in prompt_text
+    assert "오늘 Transformer 공부했어" not in prompt_text
+
+
+def test_confirm_finalize_ignores_already_covered_topics(tmp_path, monkeypatch):
+    """추출기가 이미 다룬 토픽을 뱉어도(짧은 답변에서 흔함) 재질문하지 않고 저장한다."""
+    monkeypatch.setattr("app.rag.nodes.save_raw_session", lambda **kw: tmp_path / "raw.md")
+    monkeypatch.setattr("app.rag.nodes.write_daily_note", lambda **kw: tmp_path / "transformer.md")
+
+    node = _confirm_finalize_node_with(
+        TopicList(topics=["self attention", "positional encoding"], umbrella="Transformer"), None)
+    out = node(_finished_session_state("응 저장해줘"))
+
+    assert out["saved_documents"] == [{"type": "dailynote", "file_name": "transformer.md"}]
+    assert "pending" not in out
+
+
+def test_confirm_finalize_continues_session_on_new_topic(tmp_path, monkeypatch):
+    """"더 이야기하고 싶은 게 있으면" 경로: 새 주제를 말하면 저장 대신 세션을 이어간다."""
+    monkeypatch.setattr("app.rag.nodes.generate_recall_question",
+                        lambda llm, topic, conversation: f"{topic} 네 말로 설명해볼래?")
+
+    node = _confirm_finalize_node_with(
+        TopicList(topics=["residual connection"], umbrella="Transformer"), None)
+    out = node(_finished_session_state("아 맞다 residual connection도 배웠어"))
+
+    assert out["pending"] == ["residual connection"]
+    assert out["awaiting_finalize"] is False
+    assert out["messages"][0].content == "residual connection 네 말로 설명해볼래?"
+    assert "saved_documents" not in out
