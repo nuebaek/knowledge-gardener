@@ -173,3 +173,24 @@ def test_answer_document_question_includes_prior_history(monkeypatch):
     assert "첫 질문" in human_content
     assert "첫 답변" in human_content
     assert "두번째 질문" in human_content
+
+
+def test_build_llm_exaone_uses_openai_compatible_endpoint(monkeypatch):
+    from langchain_openai import ChatOpenAI
+
+    from app.rag import chain
+
+    monkeypatch.setenv("LLM_PROVIDER", "exaone")
+    monkeypatch.setenv("EXAONE_API_KEY", "test-key")
+    monkeypatch.delenv("EXAONE_REASONING_EFFORT", raising=False)
+    chain.build_llm.cache_clear()
+    try:
+        llm = chain.build_llm()
+    finally:
+        chain.build_llm.cache_clear()  # 다른 테스트에 exaone 인스턴스가 새지 않게
+
+    assert isinstance(llm, ChatOpenAI)
+    assert llm.model_name == "k-exaone_v2.5"
+    assert llm.openai_api_base == "https://api.exaone.ai/v1"
+    assert llm.reasoning_effort == "low"
+    assert llm.max_retries == 0

@@ -257,6 +257,17 @@ def build_llm():
             model=os.getenv("OLLAMA_MODEL", "gemma4:e2b"),
             base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         )
+    if provider == "exaone":
+        # LG EXAONE API는 OpenAI 호환 — 전용 SDK 없이 ChatOpenAI로 붙는다.
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model=os.getenv("EXAONE_MODEL", "k-exaone_v2.5"),
+            base_url=os.getenv("EXAONE_BASE_URL", "https://api.exaone.ai/v1"),
+            api_key=os.getenv("EXAONE_API_KEY"),
+            # 추론은 끌 수 없고 API 기본값이 max — 판정 1회 ~21초라 대화용으론 low로 낮춘다.
+            reasoning_effort=os.getenv("EXAONE_REASONING_EFFORT", "low"),
+            max_retries=0,
+        )
     from langchain_cerebras import ChatCerebras
     return ChatCerebras(
         model=os.getenv("CEREBRAS_MODEL", "gemma-4-31b"),
