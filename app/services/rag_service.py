@@ -31,7 +31,9 @@ def converse(agent_graph, message: str, thread_id: str, selected_topics: list[st
     try:
         after = agent_graph.invoke(graph_input, config=config)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Agent 실행 실패: {exc}") from exc
+        # 예외 원문엔 API 키·내부 경로가 섞일 수 있다 — 서버 로그에만 남기고 클라이언트엔 고정 문구.
+        logger.exception("converse 실패 thread_id=%s", thread_id)
+        raise HTTPException(status_code=500, detail="응답을 만들지 못했어요. 잠시 후 다시 시도해주세요.") from exc
     finally:
         logger.info("converse thread_id=%s elapsed_ms=%.0f", thread_id, (time.perf_counter() - start) * 1000)
 

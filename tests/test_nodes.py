@@ -97,3 +97,30 @@ def test_grade_docs_top1_always_survives_when_relevant():
     assert result["is_relevant"] is True
     assert docs[0] in result["document"]
     assert len(result["document"]) == 1
+
+
+def test_grade_docs_handles_empty_retrieval_without_crashing():
+    """회귀: 검색 후보가 0개면 max([])로 ValueError가 나던 문제 — 관련 없음으로 처리해야 한다."""
+    result = _grade_docs_node()({"document": [], "doc_scores": []})
+
+    assert result["is_relevant"] is False
+    assert result["document"] == []
+
+
+class _ExplodingLLM:
+    """호출되면 안 되는 경로를 검증용 — invoke가 불리면 테스트 실패."""
+
+    def invoke(self, messages):
+        raise AssertionError("근거 문서가 없는데 LLM을 호출했다")
+
+
+def test_generate_without_any_relevant_doc_answers_without_calling_llm():
+    """재검색까지 실패해 근거가 0개면 빈 컨텍스트로 LLM을 부르지 않고 고정 문구로 답한다
+    (빈 컨텍스트 호출은 비용·지연 낭비이고 '자료에 없음' 지시를 어기면 환각이 된다)."""
+    from app.rag.nodes import NO_CONTEXT_ANSWER
+
+    _, generate_node, _, _ = make_nodes(None, None, None, _ExplodingLLM())
+
+    result = generate_node({"question": "풀링이 뭐야?", "document": [], "is_relevant": False})
+
+    assert result == {"answer": NO_CONTEXT_ANSWER, "sources": []}
