@@ -173,3 +173,51 @@ def test_answer_document_question_includes_prior_history(monkeypatch):
     assert "첫 질문" in human_content
     assert "첫 답변" in human_content
     assert "두번째 질문" in human_content
+
+
+def test_build_llm_exaone_uses_openai_compatible_endpoint(monkeypatch):
+    from langchain_openai import ChatOpenAI
+
+    from app.rag import chain
+
+    monkeypatch.setenv("LLM_PROVIDER", "exaone")
+    monkeypatch.setenv("EXAONE_API_KEY", "test-key")
+    monkeypatch.delenv("EXAONE_REASONING_EFFORT", raising=False)
+    chain.build_llm.cache_clear()
+    try:
+        llm = chain.build_llm()
+    finally:
+        chain.build_llm.cache_clear()  # 다른 테스트에 exaone 인스턴스가 새지 않게
+
+    assert isinstance(llm, ChatOpenAI)
+    assert llm.model_name == "k-exaone_v2.5"
+    assert llm.openai_api_base == "https://api.exaone.ai/v1"
+    assert llm.reasoning_effort == "low"
+    assert llm.max_retries == 0
+
+
+def test_build_llm_defaults_to_openrouter_with_exaone_fallback(monkeypatch):
+    from langchain_openai import ChatOpenAI
+
+    from app.rag import chain
+
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("EXAONE_API_KEY", "test-key")
+    for f in (chain.build_llm, chain.build_exaone_fallback_llm):
+        f.cache_clear()
+    try:
+        llm, fb = chain.build_llm(), chain.build_exaone_fallback_llm()
+        monkeypatch.setenv("LLM_PROVIDER", "exaone")
+        chain.build_exaone_fallback_llm.cache_clear()
+        fb_when_primary_exaone = chain.build_exaone_fallback_llm()
+    finally:
+        for f in (chain.build_llm, chain.build_exaone_fallback_llm):
+            f.cache_clear()
+
+    assert isinstance(llm, ChatOpenAI)
+    assert llm.model_name == "nvidia/nemotron-3.5-lightning:free"
+    assert llm.openai_api_base == "https://openrouter.ai/api/v1"
+    assert fb.model_name == "k-exaone_v2.5"
+    assert fb_when_primary_exaone is None  # 같은 모델로 폴백하지 않는다
