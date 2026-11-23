@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Document RAG", lifespan=lifespan)
+app = FastAPI(title="Knowledge Gardener", lifespan=lifespan)
 app.include_router(converse.router)
 app.include_router(corpus.router)
 

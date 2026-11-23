@@ -79,3 +79,10 @@ tests/*.html
 /*멘토링*.md
 /Knowledge Gardener*.md
 docs/superpowers/
+
+# 로컬 도구/대회 자료 — 레포엔 안 실음
+/:
+/AGENTS.md
+.codex/
+docs/ai-sp/
+docs/archive/

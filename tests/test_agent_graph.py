@@ -298,15 +298,17 @@ def test_til_tool_reports_saved_document_and_lets_agent_speak(graph_env):
     assert res.answer == "정리해서 알려줄게요"
 
 
-def test_answer_question_never_looks_like_a_saved_document(graph_env):
+def test_answer_question_returns_tool_answer_without_a_second_agent_call(graph_env):
     """회귀: 예전엔 모든 ToolMessage 본문을 Path(...)로 파싱해서 QA 답변까지 '저장된 문서'가 됐다."""
-    _, graph = graph_env(tool_plan={"뭐야": ("answer_question", {"question": "합성곱이 뭐야"})})
+    fake, graph = graph_env(tool_plan={"뭐야": ("answer_question", {"question": "합성곱이 뭐야"})})
 
     res = converse(graph, "합성곱이 뭐야", "t6")
 
     assert res.saved_documents == []
     assert res.tools_used == ["answer_question"]
     assert res.sources == ["data/processed/convolutional-networks.md"]
+    assert res.answer == "합성곱은 ...\n\n(출처: data/processed/convolutional-networks.md)"
+    assert fake.agent_calls == 1
 
 
 def test_topicless_start_falls_back_to_agent_without_opening_a_session(graph_env):

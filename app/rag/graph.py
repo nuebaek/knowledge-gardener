@@ -1,6 +1,7 @@
 from langgraph.graph import START, StateGraph, END
 from langgraph.prebuilt import tools_condition, ToolNode
 from langgraph.checkpoint.memory import InMemorySaver
+from langchain_core.messages import ToolMessage
 
 from app.rag.state import GraphState, StudySessionState
 from app.rag.chain import build_embeddings, build_llm, get_vectorstore, search_source_paths, build_bm25, load_split_docs, build_reranker
@@ -25,7 +26,10 @@ def check_pending(state: StudySessionState):
 
 
 def route_after_tools(state: StudySessionState):
-    return END if state.get("pending") else "agent"
+    message = state["messages"][-1]
+    if state.get("pending") or (isinstance(message, ToolMessage) and message.name == "answer_question"):
+        return END
+    return "agent"
 
 
 def build_rag_graph():
