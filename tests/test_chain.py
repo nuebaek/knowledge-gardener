@@ -194,3 +194,30 @@ def test_build_llm_exaone_uses_openai_compatible_endpoint(monkeypatch):
     assert llm.openai_api_base == "https://api.exaone.ai/v1"
     assert llm.reasoning_effort == "low"
     assert llm.max_retries == 0
+
+
+def test_build_llm_defaults_to_openrouter_with_exaone_fallback(monkeypatch):
+    from langchain_openai import ChatOpenAI
+
+    from app.rag import chain
+
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("EXAONE_API_KEY", "test-key")
+    for f in (chain.build_llm, chain.build_exaone_fallback_llm):
+        f.cache_clear()
+    try:
+        llm, fb = chain.build_llm(), chain.build_exaone_fallback_llm()
+        monkeypatch.setenv("LLM_PROVIDER", "exaone")
+        chain.build_exaone_fallback_llm.cache_clear()
+        fb_when_primary_exaone = chain.build_exaone_fallback_llm()
+    finally:
+        for f in (chain.build_llm, chain.build_exaone_fallback_llm):
+            f.cache_clear()
+
+    assert isinstance(llm, ChatOpenAI)
+    assert llm.model_name == "nvidia/nemotron-3.5-lightning:free"
+    assert llm.openai_api_base == "https://openrouter.ai/api/v1"
+    assert fb.model_name == "k-exaone_v2.5"
+    assert fb_when_primary_exaone is None  # 같은 모델로 폴백하지 않는다

@@ -248,9 +248,26 @@ def search_source_paths(query: str, k: int = TOP_K) -> list[str]:
     return _extract_sources(docs)
 
 
+def _provider() -> str:
+    return os.getenv("LLM_PROVIDER", "openrouter").lower()
+
+
+def _exaone_llm():
+    # LG EXAONE API는 OpenAI 호환 — 전용 SDK 없이 ChatOpenAI로 붙는다.
+    from langchain_openai import ChatOpenAI
+    return ChatOpenAI(
+        model=os.getenv("EXAONE_MODEL", "k-exaone_v2.5"),
+        base_url=os.getenv("EXAONE_BASE_URL", "https://api.exaone.ai/v1"),
+        api_key=os.getenv("EXAONE_API_KEY"),
+        # 추론은 끌 수 없고 API 기본값이 max — 판정 1회 ~21초라 대화용으론 low로 낮춘다.
+        reasoning_effort=os.getenv("EXAONE_REASONING_EFFORT", "low"),
+        max_retries=0,
+    )
+
+
 @lru_cache(maxsize=1)
 def build_llm():
-    provider = os.getenv("LLM_PROVIDER", "cerebras").lower()
+    provider = _provider()
     if provider == "ollama":
         from langchain_ollama import ChatOllama
         return ChatOllama(
@@ -258,41 +275,31 @@ def build_llm():
             base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         )
     if provider == "exaone":
-        # LG EXAONE API는 OpenAI 호환 — 전용 SDK 없이 ChatOpenAI로 붙는다.
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            model=os.getenv("EXAONE_MODEL", "k-exaone_v2.5"),
-            base_url=os.getenv("EXAONE_BASE_URL", "https://api.exaone.ai/v1"),
-            api_key=os.getenv("EXAONE_API_KEY"),
-            # 추론은 끌 수 없고 API 기본값이 max — 판정 1회 ~21초라 대화용으론 low로 낮춘다.
-            reasoning_effort=os.getenv("EXAONE_REASONING_EFFORT", "low"),
+        return _exaone_llm()
+    if provider == "cerebras":
+        from langchain_cerebras import ChatCerebras
+        return ChatCerebras(
+            model=os.getenv("CEREBRAS_MODEL", "gemma-4-31b"),
+            api_key=os.getenv("CEREBRAS_API_KEY"),
             max_retries=0,
         )
-    from langchain_cerebras import ChatCerebras
-    return ChatCerebras(
-        model=os.getenv("CEREBRAS_MODEL", "gemma-4-31b"),
-        api_key=os.getenv("CEREBRAS_API_KEY"),
+    # 기본: OpenRouter 무료 모델. 무료 엔드포인트는 제공처 혼잡 시 429가 잦아 폴백(EXAONE)이 전제다.
+    from langchain_openai import ChatOpenAI
+    return ChatOpenAI(
+        model=os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free"),
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.getenv("OPENROUTER_API_KEY"),
         max_retries=0,
+        timeout=60,  # 무료 엔드포인트가 응답 없이 붙잡고 있으면 폴백으로 넘어가도록
     )
 
 
 @lru_cache(maxsize=1)
-def build_cerebras_fallback_llm():
-    """primary Cerebras 키가 429일 때 먼저 시도할 두 번째(유료) 키. 없으면 스킵하고 바로 Haiku."""
-    key = os.getenv("CEREBRAS_FALLBACK_API_KEY")
-    if not key:
+def build_exaone_fallback_llm():
+    """primary 실패(429 등) 시 먼저 시도할 EXAONE. primary가 이미 exaone이거나 키가 없으면 스킵."""
+    if _provider() == "exaone" or not os.getenv("EXAONE_API_KEY"):
         return None
-    from langchain_cerebras import ChatCerebras
-    return ChatCerebras(model=os.getenv("CEREBRAS_MODEL", "gemma-4-31b"), api_key=key, max_retries=0)
-
-
-@lru_cache(maxsize=1)
-def build_fallback_llm():
-    model = os.getenv("LLM_FALLBACK_MODEL", "claude-haiku-4-5")
-    if not model:
-        return None
-    from langchain_anthropic import ChatAnthropic
-    return ChatAnthropic(model=model, api_key=os.getenv("ANTHROPIC_API_KEY"), max_retries=2)
+    return _exaone_llm()
 
 
 @lru_cache(maxsize=1)
@@ -313,7 +320,7 @@ def default_llm():
 def apply_fallback(model, configure=lambda m: m, fallback=None):
     if not isinstance(model, BaseChatModel):
         return configure(model)
-    fb = fallback if fallback is not None else [build_cerebras_fallback_llm(), build_fallback_llm()]
+    fb = fallback if fallback is not None else [build_exaone_fallback_llm()]
     raw_models = [model] + [f for f in (fb if isinstance(fb, list) else [fb]) if f is not None]
     if len(raw_models) == 1:
         return configure(model)
