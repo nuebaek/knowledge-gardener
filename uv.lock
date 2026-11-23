@@ -1008,6 +1008,66 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/77/59/28403890c5f757254bf2068ff321fb3e656fb2e5658a3de8bfc092e4fd83/kiwipiepy_model-0.23.0.tar.gz", hash = "sha256:498a22f5585e6c4a162423d7557eb3ee3f71cddc6e0aeb2650c50467e85933e2", size = 87976912, upload-time = "2026-03-17T16:28:32.318Z" }
 
 [[package]]
+name = "knowledge-gardener"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "chromadb" },
+    { name = "fastapi", extra = ["standard"] },
+    { name = "google-genai" },
+    { name = "kiwipiepy" },
+    { name = "langchain" },
+    { name = "langchain-anthropic" },
+    { name = "langchain-chroma" },
+    { name = "langchain-google-genai" },
+    { name = "langchain-huggingface" },
+    { name = "langchain-ollama" },
+    { name = "langchain-openai" },
+    { name = "langchain-text-splitters" },
+    { name = "langsmith" },
+    { name = "markitdown", extra = ["pdf"] },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "rank-bm25" },
+    { name = "sentence-transformers" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
+    { name = "uvicorn" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "chromadb", specifier = ">=1.5.9" },
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.138.0" },
+    { name = "google-genai", specifier = ">=2.10.0" },
+    { name = "kiwipiepy", specifier = ">=0.23.2" },
+    { name = "langchain", specifier = ">=1.3.11" },
+    { name = "langchain-anthropic", specifier = ">=1.5.3" },
+    { name = "langchain-chroma", specifier = ">=1.1.0" },
+    { name = "langchain-google-genai", specifier = ">=4.2.6" },
+    { name = "langchain-huggingface", specifier = ">=1.2.2" },
+    { name = "langchain-ollama", specifier = ">=1.1.0" },
+    { name = "langchain-openai", specifier = ">=1.3.3" },
+    { name = "langchain-text-splitters", specifier = ">=0.3.0" },
+    { name = "langsmith", specifier = ">=0.9.1" },
+    { name = "markitdown", extras = ["pdf"], specifier = ">=0.1.0" },
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "python-dotenv", specifier = ">=1.2.2" },
+    { name = "rank-bm25", specifier = ">=0.2.2" },
+    { name = "sentence-transformers", specifier = ">=5.6.0" },
+    { name = "torch", specifier = ">=2.12", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "uvicorn", specifier = ">=0.32.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.1.1" }]
+
+[[package]]
 name = "kubernetes"
 version = "36.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1054,19 +1114,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/70/5b/25ffc9cc66a8260db9e2da2836ee33b260dfbb874d1ea2f99d70023f2b1d/langchain_anthropic-1.5.3.tar.gz", hash = "sha256:48a7e4fc3856c42f9dcb4396ba112afcdd8dee21b70a402bc43283c970de3941", size = 713962, upload-time = "2026-07-28T17:02:55.903Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2a/19/584ab8517718f48bb411d051be713ebd8b58351741f8a4ca23d6a305cb1b/langchain_anthropic-1.5.3-py3-none-any.whl", hash = "sha256:b1b72b7c9e4bf5c044660629ebbcb79cef18c140fdc80174750eb86de13ec8bc", size = 54034, upload-time = "2026-07-28T17:02:54.594Z" },
-]
-
-[[package]]
-name = "langchain-cerebras"
-version = "0.8.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "langchain-core" },
-    { name = "langchain-openai" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/64/d8/76356d5361b3dd6e1febcc62cc83acc01a88f7fca43b836d4e3a72434a37/langchain_cerebras-0.8.2.tar.gz", hash = "sha256:1594f87d08955a141269d48527d9a636827f6cb60167c447d8c5969eeaa9c8c7", size = 11267, upload-time = "2025-11-24T18:14:56.356Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/f9/239509fccf433f7cb34f8d2cf15885e4eda5e04f1f3110da295543fbaec5/langchain_cerebras-0.8.2-py3-none-any.whl", hash = "sha256:ca956bd8906e4760d903d3b9c614913488a87e44ee61522fafd66267dfb6582f", size = 9961, upload-time = "2025-11-24T18:14:55.305Z" },
 ]
 
 [[package]]
@@ -2168,68 +2215,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f0/7a/1c7270340330e575b92f397352af856a8c06f230aa3e76f86b39d01b416a/pyyaml-6.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4ad1906908f2f5ae4e5a8ddfce73c320c2a1429ec52eafd27138b7f1cbe341c9", size = 174062, upload-time = "2025-09-25T21:32:55.767Z" },
     { url = "https://files.pythonhosted.org/packages/f1/12/de94a39c2ef588c7e6455cfbe7343d3b2dc9d6b6b2f40c4c6565744c873d/pyyaml-6.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:ebc55a14a21cb14062aa4162f906cd962b28e2e9ea38f9b4391244cd8de4ae0b", size = 149341, upload-time = "2025-09-25T21:32:56.828Z" },
 ]
-
-[[package]]
-name = "rag-project"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "chromadb" },
-    { name = "fastapi", extra = ["standard"] },
-    { name = "google-genai" },
-    { name = "kiwipiepy" },
-    { name = "langchain" },
-    { name = "langchain-anthropic" },
-    { name = "langchain-cerebras" },
-    { name = "langchain-chroma" },
-    { name = "langchain-google-genai" },
-    { name = "langchain-huggingface" },
-    { name = "langchain-ollama" },
-    { name = "langchain-openai" },
-    { name = "langchain-text-splitters" },
-    { name = "langsmith" },
-    { name = "markitdown", extra = ["pdf"] },
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "rank-bm25" },
-    { name = "sentence-transformers" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
-    { name = "uvicorn" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "chromadb", specifier = ">=1.5.9" },
-    { name = "fastapi", extras = ["standard"], specifier = ">=0.138.0" },
-    { name = "google-genai", specifier = ">=2.10.0" },
-    { name = "kiwipiepy", specifier = ">=0.23.2" },
-    { name = "langchain", specifier = ">=1.3.11" },
-    { name = "langchain-anthropic", specifier = ">=1.5.3" },
-    { name = "langchain-cerebras", specifier = ">=0.8.2" },
-    { name = "langchain-chroma", specifier = ">=1.1.0" },
-    { name = "langchain-google-genai", specifier = ">=4.2.6" },
-    { name = "langchain-huggingface", specifier = ">=1.2.2" },
-    { name = "langchain-ollama", specifier = ">=1.1.0" },
-    { name = "langchain-openai", specifier = ">=1.3.3" },
-    { name = "langchain-text-splitters", specifier = ">=0.3.0" },
-    { name = "langsmith", specifier = ">=0.9.1" },
-    { name = "markitdown", extras = ["pdf"], specifier = ">=0.1.0" },
-    { name = "pydantic", specifier = ">=2.13.4" },
-    { name = "python-dotenv", specifier = ">=1.2.2" },
-    { name = "rank-bm25", specifier = ">=0.2.2" },
-    { name = "sentence-transformers", specifier = ">=5.6.0" },
-    { name = "torch", specifier = ">=2.12", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "uvicorn", specifier = ">=0.32.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "rank-bm25"

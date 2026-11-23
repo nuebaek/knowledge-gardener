@@ -1,25 +1,11 @@
+# 로컬 컨테이너 실행용. Chroma는 앱 안에서 임베디드(PersistentClient)로 돌고 chroma_data/에 저장된다.
 services:
-  chroma:
-    image: chromadb/chroma:latest
-    volumes:
-      - chroma_server_data:/data
-    ports:
-      - "8000:8000"
-
   app:
     build: .
     env_file:
       - .env
-    environment:
-      - CHROMA_MODE=server
-      - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
     volumes:
       - ./data:/app/data
+      - ./chroma_data:/app/chroma_data
     ports:
       - "8080:8080"
-    depends_on:
-      - chroma
-
-volumes:
-  chroma_server_data:

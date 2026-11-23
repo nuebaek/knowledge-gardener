@@ -26,7 +26,7 @@ from app.rag.chain import build_judge_llm, load_split_docs, section_key  # noqa:
 
 OUT_PATH = PROJECT_ROOT / "data" / "eval" / "benchmark.jsonl"
 
-GEN_MODELS = ("anthropic", "google", "cerebras")   # 생성기 모델. 데이터셋 provenance로 각 문항에 기록된다
+GEN_MODELS = ("anthropic", "google", "openrouter")   # 생성기 모델. 데이터셋 provenance로 각 문항에 기록된다
 
 MIN_SECTION_CHARS = 300      # 이보다 짧은 섹션은 문항을 만들 내용이 없다
 HEADER_OVERLAP_MAX = 0.4     # conceptual 문항이 헤더 어휘를 이 비율 이상 재사용하면 탈락
@@ -188,11 +188,12 @@ def gen_llm(name: str):
             rate_limiter=limiter,
             max_retries=3,
         )
-    if name == "cerebras":
-        from langchain_cerebras import ChatCerebras
-        return ChatCerebras(
-            model=os.getenv("CEREBRAS_MODEL", "gemma-4-31b"),
-            api_key=os.getenv("CEREBRAS_API_KEY"),
+    if name == "openrouter":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model=os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free"),
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
             max_retries=0,
         )
     sys.exit(f"알 수 없는 모델: {name}. 가능: {', '.join(GEN_MODELS)}")
@@ -370,8 +371,8 @@ def main() -> None:
     ap.add_argument("--probe", action="store_true", help="5섹션만 돌려 전체 비용을 실측 추정")
     ap.add_argument("--review", type=int, metavar="N", help="생성된 문항 N개를 gold 원문과 대조")
     ap.add_argument("--yes", action="store_true", help="비용 확인 프롬프트 건너뛰기")
-    ap.add_argument("--model", default="cerebras", choices=GEN_MODELS,
-                    help="생성·검증 모델 (기본 cerebras — anthropic/google은 API 크레딧 별도 과금)")
+    ap.add_argument("--model", default="openrouter", choices=GEN_MODELS,
+                    help="생성·검증 모델 (기본 openrouter 무료 — anthropic/google은 API 크레딧 별도 과금)")
     ap.add_argument("--sections", action="store_true", help="코퍼스 통계만 출력, LLM 호출 없음")
     args = ap.parse_args()
 
@@ -405,7 +406,7 @@ def main() -> None:
         cost_note = {
             "anthropic": " — ANTHROPIC_API_KEY 선불 크레딧 과금. Claude Pro/Max 구독으로는 못 씁니다.",
             "google": " — GOOGLE_API_KEY 과금",
-            "cerebras": " — CEREBRAS_API_KEY (무료 티어)",
+            "openrouter": " — OPENROUTER_API_KEY (무료 모델, 50회/일)",
         }[args.model]
         print(f"모델: {args.model}{cost_note}")
         if input("진행할까요? [y/N] ").strip().lower() != "y":

@@ -69,12 +69,7 @@ def build_embeddings(model_name: str | None = None):
 
 
 def build_chroma_client():
-    mode = os.getenv("CHROMA_MODE", "local").lower()
-    if mode == "server":
-        return chromadb.HttpClient(
-            host=os.getenv("CHROMA_HOST", "localhost"),
-            port=int(os.getenv("CHROMA_PORT", "8000")),
-        )
+    # 임베디드 모드만 쓴다 — 단일 컨테이너+볼륨 배포(Fly.io)에선 별도 Chroma 서버가 필요 없다.
     return chromadb.PersistentClient(path=str(CHROMA_DIR))
 
 
@@ -276,13 +271,6 @@ def build_llm():
         )
     if provider == "exaone":
         return _exaone_llm()
-    if provider == "cerebras":
-        from langchain_cerebras import ChatCerebras
-        return ChatCerebras(
-            model=os.getenv("CEREBRAS_MODEL", "gemma-4-31b"),
-            api_key=os.getenv("CEREBRAS_API_KEY"),
-            max_retries=0,
-        )
     # 기본: OpenRouter 무료 모델. 무료 엔드포인트는 제공처 혼잡 시 429가 잦아 폴백(EXAONE)이 전제다.
     from langchain_openai import ChatOpenAI
     return ChatOpenAI(
