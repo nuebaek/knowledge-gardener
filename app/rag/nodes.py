@@ -16,6 +16,7 @@ from app.writer.writer import save_raw_session, write_daily_note
 
 logger = logging.getLogger(__name__)
 
+NO_CONTEXT_ANSWER = "제공된 자료에 이 내용이 없습니다."  # PROMPT가 근거 없을 때 쓰라고 지시하는 문구와 동일
 FINALIZE_CONFIRM_MESSAGE = "수고했어요! 오늘 배운 내용 정리해서 저장할까요? 더 이야기하고 싶은 게 있으면 말해주세요."
 
 
@@ -53,6 +54,9 @@ def make_nodes(vectorstore, prompt, rewrite_prompt, llm, bm25=None, bm25_docs=No
         }
 
     def generate_node(state: GraphState):
+        if not state["document"]:
+            # 재검색까지 실패해 근거가 0개 — 빈 컨텍스트로 LLM을 부르면 비용·지연만 들고 환각 위험.
+            return {"answer": NO_CONTEXT_ANSWER, "sources": []}
         context = "\n\n".join(d.page_content for d in state["document"])
         messages = prompt.invoke({"context": context, "question": state["question"]}).to_messages()
         response = llm.invoke(messages)
@@ -63,7 +67,7 @@ def make_nodes(vectorstore, prompt, rewrite_prompt, llm, bm25=None, bm25_docs=No
         }
 
     def grade_docs_node(state: GraphState):
-        top_score = max(state["doc_scores"])
+        top_score = max(state["doc_scores"], default=0.0)  # 후보 0개(빈 코퍼스 등)면 관련 없음
         is_relevant = top_score > RELEVANCE_THRESHOLD
         logger.debug("grade_docs top_score=%.3f threshold=%s -> is_relevant=%s", top_score, RELEVANCE_THRESHOLD, is_relevant)
         # top-1만 통과 기준으로 쓰고 나머지 top-k를 그대로 컨텍스트/출처에 흘려보내면,
