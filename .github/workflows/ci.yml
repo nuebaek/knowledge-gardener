@@ -1,0 +1,19 @@
+name: CI
+
+# EC2 배포(Docker Hub push + SSH 배포)는 EC2 종료로 제거. 배포는 Fly.io 이전 때 다시 붙인다.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - run: uv sync --locked
+
+      - run: uv run pytest -q
