@@ -285,7 +285,7 @@ def _exaone_llm():
 
 @lru_cache(maxsize=2)
 def build_llm(reasoning: bool = True):
-    """reasoning=False는 OpenRouter에서만 의미가 있다(루브릭 judge용). 다른 제공처는 무시."""
+    """reasoning=False는 OpenRouter에서만 의미가 있다(판정·주제 추출용). 다른 제공처는 무시."""
     provider = _provider()
     if provider == "ollama":
         from langchain_ollama import ChatOllama
@@ -303,8 +303,8 @@ def build_llm(reasoning: bool = True):
         api_key=os.getenv("OPENROUTER_API_KEY"),
         max_retries=0,
         timeout=60,  # 무료 엔드포인트가 응답 없이 붙잡고 있으면 폴백으로 넘어가도록
-        # judge는 추론을 켜면 1회 3천~2만 토큰·20~140초, 끄면 ~200토큰·1~2초(10건 정확도 동일).
-        # 다른 태스크(답변·재작성·툴 호출)는 켬/끔 비교 전이라 기본값(켬) 유지.
+        # 추론을 켜면 judge 1회 3천~2만 토큰·20~140초, 끄면 ~200토큰·1~2초(10건 정확도 동일).
+        # 답변 생성·질의 재작성·agent 도구 선택은 켬/끔 비교 전이라 기본값(켬) 유지.
         extra_body=None if reasoning else {"reasoning": {"enabled": False}},
     )
 

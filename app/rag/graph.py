@@ -69,12 +69,14 @@ def build_rag_graph():
 def build_agent_graph(llm=None, tools=None, checkpointer=None, search_sources=None, judge_llm=None):
     from app.rag.tools import make_tools  # 순환 import 방지
 
-    if judge_llm is None:
-        # 스터디 세션 판정도 OpenRouter → EXAONE 폴백 흐름을 쓰되 추론만 끈다(지연 수십 초 → 1~2초).
-        # Sonnet(build_judge_llm)은 오프라인 벤치마크 전용, 실사용 경로엔 안 태운다.
-        judge_llm = llm if llm is not None else build_llm(reasoning=False)
+    # 구조화 출력(판정·write_daily 주제 추출)은 추론을 끈다 — 같은 결과에 지연만 수십 배.
+    # 실측(nemotron): judge 20~140s → 1~2s, 주제 추출 11.9s → 0.5s.
+    # 회상 질문은 끄면 "주말 동안 공부한"처럼 맥락을 지어내 켬 유지. agent 도구 선택도 평가 전이라 켬.
+    # Sonnet(build_judge_llm)은 오프라인 벤치마크 전용, 실사용 경로엔 안 태운다.
+    fast_llm = llm if llm is not None else build_llm(reasoning=False)
+    judge_llm = judge_llm if judge_llm is not None else fast_llm
     llm = llm if llm is not None else build_llm()
-    tools = tools if tools is not None else make_tools(llm=llm)
+    tools = tools if tools is not None else make_tools(llm=fast_llm)  # llm은 write_daily 주제 추출에만 쓰임
     search_sources = search_sources if search_sources is not None else search_source_paths
     agent_node = make_agent_node(llm, tools, AGENT_SYSTEM_PROMPT)
     study_node, finalize_node, confirm_finalize_node, confirm_topics_node = make_study_node(judge_llm, llm, search_sources)
