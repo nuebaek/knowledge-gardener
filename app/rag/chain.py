@@ -20,7 +20,7 @@ from app.core.paths import CHROMA_DIR, PROJECT_ROOT
 from app.rag.prompts import (
     DOC_QA_PROMPT, RECALL_QUESTION_PROMPT, TURN_PROMPT, format_doc_chat_history,
 )
-from app.schemas.rag import TurnResult
+from app.schemas.rag import RubricResult, TurnResult
 
 load_dotenv()
 
@@ -33,15 +33,38 @@ RELEVANCE_THRESHOLD = float(os.getenv("RELEVANCE_THRESHOLD", "0.47"))
 RRF_K = int(os.getenv("RRF_K", "60"))
 
 
-def study_turn(llm, topic, next_topic, message, conversation) -> TurnResult:
-    turn = apply_fallback(llm, lambda m: m.with_structured_output(TurnResult))
+DIMS = ("definition", "mechanism", "application", "connection")
+# 깊이 합(0~8) 기준선. 라벨 54건에서 "원리 필수" 조건은 정의·비교형 개념(401 vs 403 등)을
+# 부당하게 막아(explained 6건) 뺐다 — 합계만 본다.
+PASS_DEPTH = int(os.getenv("PASS_DEPTH", "4"))
+MAX_FOLLOWUPS = 2  # 같은 토픽 꼬리질문 상한 — 없으면 judge가 계속 얕다고 할 때 무한 질문
+
+
+def decide(r: RubricResult, followups: int, has_next: bool) -> TurnResult:
+    """LLM은 관찰만, 판정은 여기서. verdict=태도, passed=깊이, stay_on_topic=꼬리질문 여부."""
+    next_q = r.next_topic_question if has_next else None
+    if r.skipped:
+        return TurnResult(verdict="skip", passed=False, next_question=next_q)
+    scores = {d: getattr(r, d).score for d in DIMS}
+    passed = sum(scores.values()) >= PASS_DEPTH
+    verdict = "partial" if r.hedged else "explained"
+    if not passed and followups < MAX_FOLLOWUPS and r.follow_up:
+        return TurnResult(verdict=verdict, stay_on_topic=True, passed=False, next_question=r.follow_up)
+    low = min(scores.values())
+    weak = [d for d, s in scores.items() if s == low] if low < 2 else []
+    return TurnResult(verdict=verdict, passed=passed, weak=weak, next_question=next_q)
+
+
+def study_turn(llm, topic, next_topic, message, conversation, explanation=None, followups=0) -> TurnResult:
+    judge = apply_fallback(llm, lambda m: m.with_structured_output(RubricResult))
     messages = TURN_PROMPT.invoke({
         "topic": topic,
         "next_topic": next_topic or "none",
         "message": message,
+        "explanation": explanation or message,
         "conversation": conversation,
     }).to_messages()
-    return turn.invoke(messages)
+    return decide(judge.invoke(messages), followups, has_next=bool(next_topic))
 
 
 @lru_cache(maxsize=1)
@@ -260,8 +283,9 @@ def _exaone_llm():
     )
 
 
-@lru_cache(maxsize=1)
-def build_llm():
+@lru_cache(maxsize=2)
+def build_llm(reasoning: bool = True):
+    """reasoning=False는 OpenRouter에서만 의미가 있다(루브릭 judge용). 다른 제공처는 무시."""
     provider = _provider()
     if provider == "ollama":
         from langchain_ollama import ChatOllama
@@ -279,6 +303,9 @@ def build_llm():
         api_key=os.getenv("OPENROUTER_API_KEY"),
         max_retries=0,
         timeout=60,  # 무료 엔드포인트가 응답 없이 붙잡고 있으면 폴백으로 넘어가도록
+        # judge는 추론을 켜면 1회 3천~2만 토큰·20~140초, 끄면 ~200토큰·1~2초(10건 정확도 동일).
+        # 다른 태스크(답변·재작성·툴 호출)는 켬/끔 비교 전이라 기본값(켬) 유지.
+        extra_body=None if reasoning else {"reasoning": {"enabled": False}},
     )
 
 

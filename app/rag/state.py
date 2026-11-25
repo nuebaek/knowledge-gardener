@@ -25,6 +25,7 @@ class StudySessionState(MessagesState):
     seedlings: list[dict]
     umbrella: str
     current_explanation: str
+    followups: int
     awaiting_finalize: bool
     awaiting_topic_confirm: bool
     selected_topics: list[str] | None

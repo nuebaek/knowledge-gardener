@@ -105,27 +105,30 @@ def make_study_node(judge_llm, gen_llm, search_sources):
         next_topic = pending[1] if len(pending) > 1 else None
         conversation = flatten_conversation(state["messages"])
         prior_explanation = state.get("current_explanation", "")
-
-        result = study_turn(judge_llm, current_topic, next_topic, last_user_msg, conversation)
-        logger.debug(
-            "study_turn topic=%r next_topic=%r -> verdict=%s stay_on_topic=%s next_question=%r",
-            current_topic, next_topic, result.verdict, result.stay_on_topic, result.next_question,
-        )
-
+        followups = state.get("followups", 0)
         full_explanation = f"{prior_explanation}\n{last_user_msg}" if prior_explanation else last_user_msg
 
+        result = study_turn(judge_llm, current_topic, next_topic, last_user_msg, conversation,
+                            explanation=full_explanation, followups=followups)
+        logger.debug(
+            "study_turn topic=%r next_topic=%r followups=%d -> verdict=%s passed=%s stay=%s weak=%s next_question=%r",
+            current_topic, next_topic, followups, result.verdict, result.passed, result.stay_on_topic,
+            result.weak, result.next_question,
+        )
+
         if result.stay_on_topic:
-            out = {"current_explanation": full_explanation}
+            out = {"current_explanation": full_explanation, "followups": followups + 1}
             if result.next_question:
                 out["messages"] = [AIMessage(result.next_question)]
             return out
 
-        new_state = apply_verdict(state, current_topic, result.verdict, full_explanation)
+        new_state = apply_verdict(state, current_topic, result.outcome, full_explanation, weak=result.weak)
         out = {
             "pending": new_state["pending"],
             "answered": new_state["answered"],
             "seedlings": new_state["seedlings"],
             "current_explanation": "",
+            "followups": 0,
         }
         if not is_complete(new_state):
             if result.next_question:

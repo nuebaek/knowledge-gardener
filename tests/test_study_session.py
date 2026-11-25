@@ -73,32 +73,41 @@ def test_session_not_complete_until_all_topics_addressed():
 
 
 # --- study_node: LLM(MagicMock)이 낸 결과를 받아 상태에 적재하는 노드 로직 ------
-from app.schemas.rag import TurnResult          # noqa: E402
+from app.schemas.rag import DimScore, RubricResult  # noqa: E402
 from app.rag.nodes import FINALIZE_CONFIRM_MESSAGE, make_study_node  # noqa: E402
 
 
-def _study_node_with(turn_result: TurnResult):
-    """study_turn이 turn_result를 내도록 고정한 fake LLM으로 study_node를 만든다.
+def _rubric(depth=(2, 2, 0, 0), hedged=False, skipped=False, follow_up=None, next_topic_question=None):
+    """judge LLM의 관찰 결과. depth=(정의, 원리, 적용, 연결). 기본값은 확신 있고 깊이 4(통과)."""
+    d, m, a, c = (0, 0, 0, 0) if skipped else depth
+    return RubricResult(
+        skipped=skipped, hedged=hedged,
+        definition=DimScore(evidence="", score=d), mechanism=DimScore(evidence="", score=m),
+        application=DimScore(evidence="", score=a), connection=DimScore(evidence="", score=c),
+        follow_up=follow_up, next_topic_question=next_topic_question,
+    )
+
+
+def _study_node_with(rubric: RubricResult):
+    """judge가 rubric을 내도록 고정한 fake LLM으로 study_node를 만든다.
     gen_llm(토픽 추출용)은 이 테스트들이 안 건드리니 같은 mock을 재사용."""
     llm = MagicMock()
-    llm.with_structured_output.return_value.invoke.return_value = turn_result
+    llm.with_structured_output.return_value.invoke.return_value = rubric
     study_node, _, _, _ = make_study_node(llm, llm, search_sources=lambda topic: [])
     return study_node
 
 
-def _study_node_with_sequence(turn_results: list[TurnResult]):
-    """호출마다 turn_results를 순서대로 내는 fake LLM으로 study_node를 만든다(다회 라운드 테스트용)."""
+def _study_node_with_sequence(rubrics: list[RubricResult]):
+    """호출마다 rubrics를 순서대로 내는 fake LLM으로 study_node를 만든다(다회 라운드 테스트용)."""
     llm = MagicMock()
-    llm.with_structured_output.return_value.invoke.side_effect = turn_results
+    llm.with_structured_output.return_value.invoke.side_effect = rubrics
     study_node, _, _, _ = make_study_node(llm, llm, search_sources=lambda topic: [])
     return study_node
 
 
 def test_study_node_records_answer_and_asks_next_when_topics_remain():
     """남은 토픽이 있으면: 현재 답을 answered로 옮기고, LLM이 낸 다음 질문을 messages에 붙인다."""
-    study_node = _study_node_with(
-        TurnResult(verdict="explained", next_question="bind-mount는 네 말로 뭐야?")
-    )
+    study_node = _study_node_with(_rubric(next_topic_question="bind-mount는 네 말로 뭐야?"))
     state = {"messages": [HumanMessage("변경 없는 층 재사용")],
              "pending": ["레이어 캐시", "bind-mount"], "answered": [], "seedlings": []}
 
@@ -112,7 +121,7 @@ def test_study_node_records_answer_and_asks_next_when_topics_remain():
 def test_study_node_asks_finalize_confirmation_on_last_topic():
     """마지막 토픽이면: 바로 저장하지 않고 "정리할까요?" 확인부터 묻는다(awaiting_finalize=True).
     (곧장 저장하면 사용자가 더 얘기하고 싶어도 끊겨버리는 문제가 된다.)"""
-    study_node = _study_node_with(TurnResult(verdict="skip", next_question=None))
+    study_node = _study_node_with(_rubric(skipped=True))
     state = {"messages": [HumanMessage("모르겠어")],
              "pending": ["레이어 캐시"], "answered": [], "seedlings": []}
 
@@ -129,8 +138,7 @@ def test_study_node_stays_on_topic_without_touching_pending_when_deepening():
     """stay_on_topic=True면: pending/answered/seedlings는 안 건드리고 버퍼(current_explanation)만 쌓는다.
     (건드리면 파고드는 도중에 토픽이 끝난 걸로 잘못 기록되는 버그가 된다.)"""
     study_node = _study_node_with(
-        TurnResult(verdict="explained", stay_on_topic=True,
-                   next_question="prefill이랑 decode는 뭐가 달라?")
+        _rubric(depth=(1, 1, 0, 0), follow_up="prefill이랑 decode는 뭐가 달라?")  # 깊이 2 < 4 → 꼬리질문
     )
     state = {"messages": [HumanMessage("추론은 prefill과 decode로 나뉘어")],
              "pending": ["LLM Inference"], "answered": [], "seedlings": []}
@@ -140,15 +148,15 @@ def test_study_node_stays_on_topic_without_touching_pending_when_deepening():
     assert "pending" not in out and "answered" not in out and "seedlings" not in out
     assert out["current_explanation"] == "추론은 prefill과 decode로 나뉘어"
     assert out["messages"][0].content == "prefill이랑 decode는 뭐가 달라?"
+    assert out["followups"] == 1
 
 
 def test_study_node_accumulates_explanation_across_deepen_then_resolve():
     """파고들기 라운드의 원문이 최종 기록에서 안 사라지고, 다음 라운드 답과 이어 붙어 기록된다
     (표현 그대로 원칙 — 첫 라운드 원문을 버리면 안 됨)."""
     study_node = _study_node_with_sequence([
-        TurnResult(verdict="explained", stay_on_topic=True,
-                   next_question="prefill이랑 decode는 뭐가 달라?"),
-        TurnResult(verdict="explained", stay_on_topic=False, next_question=None),
+        _rubric(depth=(1, 1, 0, 0), follow_up="prefill이랑 decode는 뭐가 달라?"),
+        _rubric(depth=(2, 2, 0, 1)),
     ])
     state = {"messages": [HumanMessage("추론은 prefill과 decode로 나뉘어")],
              "pending": ["LLM Inference"], "answered": [], "seedlings": []}
@@ -167,6 +175,37 @@ def test_study_node_accumulates_explanation_across_deepen_then_resolve():
         "explanation": "추론은 prefill과 decode로 나뉘어\nprefill은 kv cache 만들고, decode는 순차 생성",
     }]
     assert round2["current_explanation"] == ""
+    assert round2["followups"] == 0  # 다음 토픽은 상한을 새로 센다
+
+
+def test_study_node_stops_following_up_at_cap_and_records_weak_dims():
+    """꼬리질문 상한(2회)에 닿으면 더 묻지 않고 🌱로 넘기며, 약한 항목을 함께 남긴다
+    (상한이 없으면 judge가 계속 얕다고 할 때 같은 토픽에서 무한 질문)."""
+    study_node = _study_node_with(_rubric(depth=(1, 0, 1, 0), follow_up="왜 그렇게 동작해?"))
+    state = {"messages": [HumanMessage("세 번째 시도")], "pending": ["Docker"],
+             "answered": [], "seedlings": [], "current_explanation": "첫 시도\n두 번째 시도", "followups": 2}
+
+    out = study_node(state)
+
+    assert out["pending"] == []
+    assert out["seedlings"] == [{
+        "topic": "Docker",
+        "user_wording": "첫 시도\n두 번째 시도\n세 번째 시도",
+        "weak": ["mechanism", "connection"],
+    }]
+    assert out["followups"] == 0
+
+
+def test_confident_but_hedged_deep_explanation_still_goes_to_seedling():
+    """깊이는 통과해도 스스로 얼버무렸으면(hedged) answered가 아니라 🌱 — 확신 없는 이해는 다시 꺼낸다."""
+    study_node = _study_node_with(_rubric(depth=(2, 2, 1, 1), hedged=True))
+    state = {"messages": [HumanMessage("음.. 아마 이런 거 같은데")], "pending": ["LoRA"],
+             "answered": [], "seedlings": []}
+
+    out = study_node(state)
+
+    assert out["answered"] == []
+    assert out["seedlings"][0]["topic"] == "LoRA"
 
 
 # --- confirm_finalize_node: "정리해서 저장할까요?"에 대한 답 처리 -----------------
@@ -255,3 +294,14 @@ def test_confirm_finalize_continues_session_on_new_topic(tmp_path, monkeypatch):
     assert out["awaiting_finalize"] is False
     assert out["messages"][0].content == "residual connection 네 말로 설명해볼래?"
     assert "saved_documents" not in out
+
+
+def test_daily_note_shows_weak_dims_of_seedling_in_korean():
+    from app.rag.study_session import serialize_for_daily_note
+
+    state = new_session(["Docker"])
+    state = apply_verdict(state, "Docker", "partial", "이미지로 배포", weak=["mechanism", "connection"])
+
+    note = serialize_for_daily_note(state)
+    assert "- Docker: 이미지로 배포" in note
+    assert "약한 부분: 원리, 연결" in note

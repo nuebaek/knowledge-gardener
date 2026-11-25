@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from app.rag.graph import build_agent_graph
 from app.rag.nodes import FINALIZE_CONFIRM_MESSAGE
 from app.rag.tools import make_tools
-from app.schemas.rag import TopicList, TurnResult
+from app.schemas.rag import DimScore, RubricResult, TopicList
 from app.services.rag_service import converse
 
 
@@ -27,7 +27,7 @@ class _Structured:
 
 
 class _TurnResults:
-    """with_structured_output(TurnResult)이 돌려주는 러너 — study_turn(판정+다음질문 1회 호출)용.
+    """with_structured_output(RubricResult)이 돌려주는 러너 — study_turn(판정+다음질문 1회 호출)용.
 
     verdict는 순서대로 소비하고(마지막은 반복), next_question은 프롬프트에 담긴 next_topic을
     그대로 반영해 만든다 — "다음 질문이 실제로 다음 토픽에 대해 나오는지"까지 검증하기 위해서다.
@@ -44,11 +44,16 @@ class _TurnResults:
             self.recall_topics.append(next_topic)
             next_question = f"[인출] {next_topic}?"
         verdict = self.verdicts.pop(0) if len(self.verdicts) > 1 else self.verdicts[0]
-        return TurnResult(verdict=verdict, next_question=next_question)
+        # verdict 라벨을 같은 결과가 나오는 루브릭 관찰값으로 바꾼다(깊이 4 = 통과).
+        score = 0 if verdict == "skip" else 2
+        dims = {k: DimScore(evidence="", score=score if k in ("definition", "mechanism") else 0)
+                for k in ("definition", "mechanism", "application", "connection")}
+        return RubricResult(skipped=verdict == "skip", hedged=verdict == "partial",
+                            next_topic_question=next_question, **dims)
 
 
 class FakeLLM:
-    """agent 노드(tool-calling) / 세션 첫 질문(invoke) / 구조화 출력(TopicList, TurnResult)
+    """agent 노드(tool-calling) / 세션 첫 질문(invoke) / 구조화 출력(TopicList, RubricResult)
     세 갈래를 한 객체로 흉내낸다. 갈래 구분은 실제로 들어온 프롬프트 모양으로 하므로,
     배선이 어긋나면 여기서 드러난다."""
 
@@ -76,7 +81,7 @@ class FakeLLM:
                     queue.append(TopicList(topics=self.confirm_topics))
                 self._topic_list_runner = _Structured(queue)
             return self._topic_list_runner
-        if schema is TurnResult:
+        if schema is RubricResult:
             return _TurnResults(self.verdicts, self.recall_topics)
         raise AssertionError(f"예상하지 못한 스키마: {schema}")
 
@@ -84,7 +89,7 @@ class FakeLLM:
         last_content = messages[-1].content if messages else ""
 
         # write_daily가 세션을 열 때 첫 질문(generate_recall_question)만 이 경로를 탄다.
-        # 턴2 이후 질문은 with_structured_output(TurnResult)에서 나온다.
+        # 턴2 이후 질문은 with_structured_output(RubricResult)에서 나온다.
         if isinstance(last_content, str) and "Ask about this topic:" in last_content:
             topic = last_content.rsplit("Ask about this topic:", 1)[-1].strip()
             self.recall_topics.append(topic)

@@ -69,12 +69,13 @@ def build_rag_graph():
 def build_agent_graph(llm=None, tools=None, checkpointer=None, search_sources=None, judge_llm=None):
     from app.rag.tools import make_tools  # 순환 import 방지
 
+    if judge_llm is None:
+        # 스터디 세션 판정도 OpenRouter → EXAONE 폴백 흐름을 쓰되 추론만 끈다(지연 수십 초 → 1~2초).
+        # Sonnet(build_judge_llm)은 오프라인 벤치마크 전용, 실사용 경로엔 안 태운다.
+        judge_llm = llm if llm is not None else build_llm(reasoning=False)
     llm = llm if llm is not None else build_llm()
     tools = tools if tools is not None else make_tools(llm=llm)
     search_sources = search_sources if search_sources is not None else search_source_paths
-    # 스터디 세션 판정은 생성 LLM과 같은 흐름(OpenRouter → EXAONE 폴백)을 쓴다 — Sonnet은
-    # 오프라인 벤치마크(scripts/benchmark.py 등)의 judge 전용, 실사용 경로엔 안 태운다.
-    judge_llm = judge_llm if judge_llm is not None else llm
     agent_node = make_agent_node(llm, tools, AGENT_SYSTEM_PROMPT)
     study_node, finalize_node, confirm_finalize_node, confirm_topics_node = make_study_node(judge_llm, llm, search_sources)
 
